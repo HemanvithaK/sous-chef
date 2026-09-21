@@ -1,0 +1,37 @@
+/* frontend/src/index.css */
+
+/*
+  Global styles for Sous Chef.
+  We're using a dark theme because:
+  1. Easier on the eyes in a kitchen
+  2. Looks more polished for a portfolio demo
+  
+  We keep it simple — no Tailwind, just clean CSS.
+  For a portfolio project, showing you can write good CSS
+  matters more than importing a framework.
+*/
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background: #1c1917;
+  color: #fafaf9;
+  min-height: 100vh;
+}
+
+/* Smooth scrolling for the transcript area */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #44403c;
+  border-radius: 3px;
+}
