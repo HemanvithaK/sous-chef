@@ -4,3 +4,6 @@ websockets
 python-dotenv
 httpx
 anthropic
+langgraph
+langchain-anthropic
+langchain-core
