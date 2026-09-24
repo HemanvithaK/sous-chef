@@ -5,6 +5,8 @@ from langgraph.graph.message import add_messages
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
+from app.rag.retriever import search_substitutions_verified
+
 
 SYSTEM_PROMPT = """You are Sous Chef, a voice-first cooking copilot.
 You help home cooks through recipes hands-free while they cook.
@@ -176,50 +178,6 @@ SAMPLE_RECIPES = {
 }
 
 
-SUBSTITUTIONS = {
-    "fish sauce": {
-        "substitutes": ["soy sauce plus a squeeze of lime", "Worcestershire sauce"],
-        "reason": "Fish sauce provides umami and salt. Soy sauce covers the umami, lime adds brightness.",
-    },
-    "oyster sauce": {
-        "substitutes": ["hoisin sauce mixed with soy sauce", "soy sauce plus a pinch of sugar"],
-        "reason": "Oyster sauce is sweet, salty, and thick. Hoisin is the closest match in texture.",
-    },
-    "thai basil": {
-        "substitutes": ["Italian basil, use more of it", "a mix of basil and mint"],
-        "reason": "Thai basil has an anise note. Adding mint to regular basil gets you closer.",
-    },
-    "heavy cream": {
-        "substitutes": ["coconut cream", "cashew cream from blended soaked cashews"],
-        "reason": "Both provide fat and body. Coconut cream works especially well in curries.",
-    },
-    "buttermilk": {
-        "substitutes": ["milk plus one tablespoon lemon juice per cup, let sit five minutes", "plain yogurt thinned with milk"],
-        "reason": "Buttermilk is just acidified milk. Lemon does the same job.",
-    },
-    "eggs": {
-        "substitutes": ["quarter cup applesauce per egg for baking", "one tablespoon ground flaxseed plus three tablespoons water per egg"],
-        "reason": "For binding use flax egg. For moisture in baking use applesauce. For structure like a souffle, no great substitute.",
-    },
-    "butter": {
-        "substitutes": ["olive oil for savory dishes", "coconut oil for baking"],
-        "reason": "The fat content is similar. Flavor will be different but it works.",
-    },
-    "soy sauce": {
-        "substitutes": ["coconut aminos", "Worcestershire sauce plus salt"],
-        "reason": "Coconut aminos is the closest one-to-one swap. Slightly sweeter but works.",
-    },
-    "parsley": {
-        "substitutes": ["cilantro if you like it", "chives"],
-        "reason": "Both are mild fresh herbs. Cilantro has more flavor, chives are more subtle.",
-    },
-    "red pepper flakes": {
-        "substitutes": ["cayenne pepper, use half the amount", "a dash of hot sauce"],
-        "reason": "Cayenne is more concentrated so use less. Hot sauce adds vinegar too.",
-    },
-}
-
-
 class CookingState(TypedDict):
     messages: Annotated[list, add_messages]
 
@@ -312,19 +270,25 @@ class CookingSession:
         })
 
     def _search_substitution(self, ingredient: str) -> str:
-        key = ingredient.lower().strip()
-        for name, data in SUBSTITUTIONS.items():
-            if key in name or name in key:
-                return json.dumps({
-                    "found": True,
-                    "ingredient": name,
-                    "substitutes": data["substitutes"],
-                    "reason": data["reason"],
-                })
+        result = search_substitutions_verified(ingredient, top_k=3)
+        verified = result["verified"]
+
+        if not verified:
+            return json.dumps({
+                "found": False,
+                "ingredient": ingredient,
+                "message": (
+                    f"The substitution database doesn't cover '{ingredient}'. "
+                    "Ask what role it plays in the dish, then reason about alternatives "
+                    "from first principles. Tell the user you're reasoning it out rather "
+                    "than citing a known substitution."
+                ),
+            })
+
         return json.dumps({
-            "found": False,
-            "ingredient": ingredient,
-            "message": f"No substitution data for '{ingredient}'. Ask the user what role it plays in the dish and reason about alternatives.",
+            "found": True,
+            "query": ingredient,
+            "results": verified,
         })
 
     def _schedule_dishes(self, dishes: list) -> str:

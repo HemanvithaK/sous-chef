@@ -1,0 +1,202 @@
+[
+  {
+    "ingredient": "fish sauce",
+    "role": "umami and salt in Southeast Asian cooking",
+    "substitutes": ["soy sauce plus a squeeze of lime", "Worcestershire sauce", "anchovy paste thinned with water"],
+    "ratio": "1:1",
+    "reasoning": "Fish sauce is fermented anchovy, so its flavor comes from glutamates and salt. Soy sauce supplies the same glutamates from fermented soybeans. Lime restores the sour edge that fermentation gives fish sauce. Worcestershire actually contains anchovy, making it closer than most people expect.",
+    "caveats": "Soy sauce is darker, so the dish will look different. Vegetarian versions lose some depth."
+  },
+  {
+    "ingredient": "oyster sauce",
+    "role": "sweet salty thickener in stir fries",
+    "substitutes": ["hoisin sauce thinned with soy sauce", "soy sauce plus brown sugar", "mushroom stir fry sauce"],
+    "ratio": "1:1",
+    "reasoning": "Oyster sauce works through three properties at once: sweetness, salt, and viscosity from cornstarch. Hoisin matches the sweetness and thickness but is more assertive, so cutting it with soy sauce balances it. Mushroom sauce is the standard vegetarian swap because dried shiitake carry similar glutamates.",
+    "caveats": "Hoisin has five-spice notes that can dominate delicate dishes."
+  },
+  {
+    "ingredient": "thai basil",
+    "role": "anise-scented finishing herb",
+    "substitutes": ["Italian basil with a few mint leaves", "holy basil", "Italian basil alone, using more"],
+    "ratio": "1.5:1 if using Italian basil alone",
+    "reasoning": "Thai basil contains estragole, the compound that gives tarragon and anise their licorice note. Italian basil lacks it. Adding mint introduces a cooling aromatic that partially mimics the complexity, though not the licorice specifically.",
+    "caveats": "Italian basil wilts faster and bruises more easily. Add it even later than you would Thai basil."
+  },
+  {
+    "ingredient": "buttermilk",
+    "role": "acid and tenderizer in baking",
+    "substitutes": ["milk plus one tablespoon lemon juice per cup, rested five minutes", "plain yogurt thinned with milk", "milk plus one tablespoon white vinegar per cup"],
+    "ratio": "1:1",
+    "reasoning": "Buttermilk does two jobs in baking. Its acid reacts with baking soda to produce lift, and it denatures gluten proteins slightly, which shortens strands and makes the crumb tender. Any acid at similar pH does both. Lemon and vinegar are interchangeable here since the flavor cooks off.",
+    "caveats": "Soured milk is thinner than real buttermilk, so batters will be slightly looser. Yogurt is thicker and closer in body."
+  },
+  {
+    "ingredient": "heavy cream",
+    "role": "fat and body in sauces and desserts",
+    "substitutes": ["coconut cream", "whole milk plus melted butter at 3:1", "cashew cream from soaked blended cashews", "evaporated milk"],
+    "ratio": "1:1",
+    "reasoning": "Heavy cream is roughly thirty-six percent butterfat suspended in water. That fat does two things: it resists curdling when heated with acid, and it creates mouthfeel. Milk plus butter reconstructs the fat ratio but not the emulsion, so it will not whip. Coconut cream has similar fat content and holds up to heat well.",
+    "caveats": "Nothing but real cream whips into stiff peaks. Coconut cream whips but tastes like coconut."
+  },
+  {
+    "ingredient": "eggs",
+    "role": "binding, leavening, moisture, or structure depending on the recipe",
+    "substitutes": ["ground flaxseed plus water at 1:3 for binding", "applesauce quarter cup per egg for moisture", "aquafaba three tablespoons per egg for aeration", "commercial egg replacer for structure"],
+    "ratio": "varies by role",
+    "reasoning": "Eggs are the most role-dependent ingredient in cooking, which is why one substitute never works everywhere. Flax forms a mucilaginous gel that binds like egg proteins. Applesauce adds moisture and some pectin but no lift. Aquafaba, the liquid from canned chickpeas, whips because its saponins and proteins stabilize foam the way egg whites do.",
+    "caveats": "For custards, souffles, and meringues where egg protein sets the structure, there is no good substitute. Pick a different recipe."
+  },
+  {
+    "ingredient": "butter",
+    "role": "fat for flavor, browning, and texture",
+    "substitutes": ["olive oil for savory at 3:4", "coconut oil for baking at 1:1", "neutral oil plus a pinch of salt", "ghee"],
+    "ratio": "3 parts oil to 4 parts butter for savory",
+    "reasoning": "Butter is about eighty percent fat and sixteen percent water, so replacing it with pure oil means you are adding more fat than the recipe expects. That is why the three to four ratio exists. Butter also contains milk solids, which brown and create nutty flavor. Oil cannot do that, so browned dishes taste flatter.",
+    "caveats": "In laminated doughs like croissants and pie crust, butter's solid-at-cold behavior is the whole technique. Oil will not work at all."
+  },
+  {
+    "ingredient": "soy sauce",
+    "role": "salt and umami base",
+    "substitutes": ["coconut aminos", "tamari for gluten free", "Worcestershire sauce plus salt", "miso paste thinned with water"],
+    "ratio": "1:1, but coconut aminos is less salty so add salt to taste",
+    "reasoning": "Soy sauce delivers salt alongside glutamates from fermented soy. Tamari is essentially the same product made without wheat. Coconut aminos ferments coconut sap instead, producing similar glutamates but noticeably sweeter and about a third less sodium.",
+    "caveats": "Coconut aminos will make the dish sweeter. Reduce other sugar accordingly."
+  },
+  {
+    "ingredient": "red pepper flakes",
+    "role": "dry heat",
+    "substitutes": ["cayenne pepper at half quantity", "fresh chili minced", "hot sauce", "gochugaru for Korean dishes"],
+    "ratio": "1:2 for cayenne",
+    "reasoning": "Capsaicin concentration varies enormously by pepper and preparation. Red pepper flakes include seeds and membrane and are coarsely ground, diluting the heat per spoon. Cayenne is finely ground pure pepper, so the same volume carries roughly twice the capsaicin.",
+    "caveats": "Hot sauce adds vinegar and moisture, which can loosen a sauce or dressing."
+  },
+  {
+    "ingredient": "parsley",
+    "role": "fresh green finishing herb",
+    "substitutes": ["cilantro if you like it", "chives", "celery leaves", "carrot tops"],
+    "ratio": "1:1",
+    "reasoning": "Flat-leaf parsley is mild and grassy, which is exactly why it appears everywhere. Its job is usually freshness and color rather than distinct flavor. Celery leaves and carrot tops are the most underrated swaps because they carry the same vegetal brightness.",
+    "caveats": "Cilantro is not neutral. It changes the dish's character and a meaningful portion of people taste it as soap."
+  },
+  {
+    "ingredient": "shallot",
+    "role": "mild sweet allium",
+    "substitutes": ["half a small onion plus a small clove of garlic", "red onion minced finer", "scallion whites"],
+    "ratio": "1 shallot equals roughly half a small onion",
+    "reasoning": "Shallots sit flavor-wise between onion and garlic, which is why combining the two approximates them. They are also lower in water and higher in sugar, so they brown faster and taste sweeter than onion.",
+    "caveats": "Onion has more water, so it takes longer to cook down and will loosen a vinaigrette."
+  },
+  {
+    "ingredient": "white wine",
+    "role": "acid and deglazing liquid",
+    "substitutes": ["stock plus a splash of white wine vinegar", "dry vermouth", "apple cider vinegar diluted three to one with water"],
+    "ratio": "1:1",
+    "reasoning": "Wine contributes acidity, some sweetness, and alcohol that dissolves flavor compounds not soluble in water or fat. Stock plus vinegar reproduces the acid but not the alcohol solvency, so aromatics extract slightly less. Vermouth is the best swap because it is wine, just fortified and aromatized.",
+    "caveats": "Skip cooking wine sold in grocery aisles. It is salted and tastes harsh."
+  },
+  {
+    "ingredient": "cornstarch",
+    "role": "thickener",
+    "substitutes": ["all purpose flour at 2:1", "arrowroot at 1:1", "potato starch at 1:1", "rice flour at 2:1"],
+    "ratio": "2 parts flour per 1 part cornstarch",
+    "reasoning": "Cornstarch is pure starch, so it thickens about twice as strongly as flour, which is only around seventy-five percent starch and also contains protein. Arrowroot and potato starch are similarly pure and swap one to one, but they break down under long cooking where cornstarch holds.",
+    "caveats": "Flour makes sauces opaque and needs to cook a few minutes to lose its raw taste. Cornstarch stays glossy and clear."
+  },
+  {
+    "ingredient": "baking powder",
+    "role": "chemical leavening",
+    "substitutes": ["quarter teaspoon baking soda plus half teaspoon cream of tartar per teaspoon of baking powder", "baking soda plus an acidic liquid already in the recipe"],
+    "ratio": "see substitutes",
+    "reasoning": "Baking powder is literally baking soda premixed with a dry acid and a starch buffer. Reconstructing it from soda and cream of tartar is not an approximation, it is the same chemistry. Baking soda alone will not work because without acid it produces no carbon dioxide and leaves a soapy taste.",
+    "caveats": "Homemade baking powder is single-acting, so it releases all its gas immediately. Get the batter into the oven right away."
+  },
+  {
+    "ingredient": "lemon juice",
+    "role": "bright acid",
+    "substitutes": ["lime juice", "white wine vinegar at three quarters quantity", "rice vinegar", "citric acid dissolved in water"],
+    "ratio": "1:1 for lime, 3:4 for vinegar",
+    "reasoning": "Lemon juice is around five to six percent citric acid. Vinegar is usually five percent acetic acid but tastes sharper, so slightly less gets you to the same perceived brightness. Lime is nearly identical in acidity but has different aromatic oils.",
+    "caveats": "Lemon zest carries most of the fragrance. If the recipe uses zest, no juice substitute will replace that."
+  },
+  {
+    "ingredient": "parmesan",
+    "role": "salty aged umami cheese",
+    "substitutes": ["pecorino romano, use less as it is saltier", "grana padano", "aged asiago", "nutritional yeast for dairy free"],
+    "ratio": "1:1 for grana padano, 3:4 for pecorino",
+    "reasoning": "Parmesan's flavor comes from long aging, which breaks proteins into free amino acids, especially glutamate. Any hard aged cheese has gone through the same process. Pecorino is sheep's milk and aged similarly but salted more heavily during production.",
+    "caveats": "Nutritional yeast gives umami but none of the fat or melting behavior. It works sprinkled on top, not stirred into a sauce."
+  },
+  {
+    "ingredient": "sour cream",
+    "role": "tangy fat for finishing and richness",
+    "substitutes": ["full fat Greek yogurt", "creme fraiche", "cottage cheese blended smooth", "coconut yogurt for dairy free"],
+    "ratio": "1:1",
+    "reasoning": "Sour cream is cream cultured with lactic acid bacteria, producing tang and thickness. Greek yogurt is the same process on milk, so it is tangier and lower in fat. Creme fraiche is cultured heavy cream, making it the closest match and the most heat-stable.",
+    "caveats": "Greek yogurt curdles more readily when heated because of its lower fat content. Stir it in off the heat."
+  },
+  {
+    "ingredient": "brown sugar",
+    "role": "sweetness plus moisture and molasses flavor",
+    "substitutes": ["white sugar plus one tablespoon molasses per cup", "coconut sugar", "white sugar alone with slightly more liquid"],
+    "ratio": "1:1",
+    "reasoning": "Brown sugar is white sugar with molasses added back. Making it yourself is exact, not approximate. The molasses matters because it is hygroscopic, meaning it attracts water, which is why brown sugar cookies stay chewy and white sugar cookies go crisp.",
+    "caveats": "Using plain white sugar changes texture noticeably in cookies. Expect crisper, flatter results."
+  },
+  {
+    "ingredient": "garlic",
+    "role": "pungent aromatic base",
+    "substitutes": ["garlic powder at one eighth teaspoon per clove", "garlic paste", "shallot plus a pinch of asafoetida"],
+    "ratio": "1 clove equals one eighth teaspoon powder",
+    "reasoning": "Fresh garlic's pungency comes from allicin, which only forms when cells rupture and an enzyme meets its substrate. Powder is made after that reaction has already happened and faded, so it tastes rounder and less sharp. Asafoetida contains sulfur compounds that read as allium to the palate, which is why it appears in cuisines that avoid garlic.",
+    "caveats": "Garlic powder cannot brown or build the fond that fresh garlic does in a hot pan."
+  },
+  {
+    "ingredient": "mirin",
+    "role": "sweet rice wine for Japanese glazes",
+    "substitutes": ["dry sherry plus sugar", "sake plus sugar", "rice vinegar plus sugar, though less accurate"],
+    "ratio": "1 tablespoon mirin equals 1 tablespoon sherry plus half teaspoon sugar",
+    "reasoning": "Mirin is a sweet rice wine with roughly fourteen percent sugar and low alcohol. The sugar is what creates the lacquered shine on teriyaki, since it caramelizes on the surface. Any wine plus sugar reproduces this. Vinegar is the weakest swap because it adds acid mirin does not have.",
+    "caveats": "Aji-mirin sold in many stores is already corn-syrup sweetened. Check the label before adding more sugar."
+  },
+  {
+    "ingredient": "tahini",
+    "role": "nutty emulsifying paste",
+    "substitutes": ["sunflower seed butter", "cashew butter thinned with water", "Greek yogurt for a lighter sauce"],
+    "ratio": "1:1",
+    "reasoning": "Tahini is ground sesame, and its power in sauces is that the seed's own fats and proteins emulsify with water and lemon juice into a creamy suspension. Other seed and nut butters do the same thing chemically. Sunflower is closest in bitterness and body.",
+    "caveats": "Nut butters are sweeter than sesame. In savory dressings, add extra lemon to compensate."
+  },
+  {
+    "ingredient": "gochujang",
+    "role": "fermented sweet spicy Korean chili paste",
+    "substitutes": ["sriracha plus miso paste", "red miso plus cayenne plus a little honey", "harissa plus sugar"],
+    "ratio": "1:1",
+    "reasoning": "Gochujang combines three things: fermented soybean depth, chili heat, and sweetness from glutinous rice. No single sauce has all three, which is why every substitute is a combination. Miso supplies the fermented base, chili supplies heat, sugar or honey supplies the rice sweetness.",
+    "caveats": "Gochujang is much thicker than sriracha. Substitutes will loosen a marinade."
+  },
+  {
+    "ingredient": "vanilla extract",
+    "role": "aromatic sweet background note",
+    "substitutes": ["vanilla bean paste at 1:1", "maple syrup", "almond extract at one quarter quantity", "bourbon"],
+    "ratio": "1:1 except almond extract",
+    "reasoning": "Vanilla extract is vanillin and hundreds of trace aromatics dissolved in alcohol. The alcohol carries the aroma and evaporates during baking. Bourbon works surprisingly well as a swap since it shares vanillin from oak barrel aging.",
+    "caveats": "Almond extract is far more potent and tastes distinctly of marzipan. Use a quarter as much or it dominates."
+  },
+  {
+    "ingredient": "chicken stock",
+    "role": "savory cooking liquid",
+    "substitutes": ["vegetable stock", "water plus a bouillon cube", "water plus soy sauce and a dried mushroom", "white wine diluted with water"],
+    "ratio": "1:1",
+    "reasoning": "Stock contributes dissolved gelatin, salt, and glutamates. Plain water has none of these, which is why dishes made with water taste thin. Dried mushrooms are the cheapest fix because they are extraordinarily high in guanylate, an umami compound that multiplies the effect of glutamates.",
+    "caveats": "Bouillon cubes are very salty. Reduce added salt or the dish becomes inedible."
+  },
+  {
+    "ingredient": "panko",
+    "role": "light crisp coating",
+    "substitutes": ["regular breadcrumbs", "crushed cornflakes", "crushed crackers", "ground rolled oats"],
+    "ratio": "1:1",
+    "reasoning": "Panko is made from crustless bread baked with electrical current, which produces large airy flakes rather than dense crumbs. Those flakes absorb less oil and stay crisp longer. Cornflakes mimic this better than regular breadcrumbs because they are similarly large and porous.",
+    "caveats": "Regular breadcrumbs absorb more oil and give a heavier, denser crust."
+  }
+]

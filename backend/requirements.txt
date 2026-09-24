@@ -7,3 +7,5 @@ anthropic
 langgraph
 langchain-anthropic
 langchain-core
+qdrant-client
+fastembed

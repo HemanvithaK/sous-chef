@@ -13,7 +13,6 @@ export default defineConfig({
     port: 3000,
 
     // This proxy section is critical. Here's why:
-    //
     // The frontend runs on localhost:3000
     // The backend runs on localhost:8000
     //

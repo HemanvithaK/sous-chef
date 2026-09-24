@@ -8,7 +8,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-# We import our voice pipeline (we'll create this next)
+# We import our voice pipeline 
 from app.voice_pipeline import VoicePipeline
 
 # Create the FastAPI application instance
@@ -38,7 +38,7 @@ async def health():
 
 # This is the main WebSocket endpoint.
 # The frontend connects here to send/receive voice data.
-#
+
 # WebSocket vs HTTP:
 # - HTTP is request-response (client asks, server answers, connection closes)
 # - WebSocket stays open — both sides can send data anytime
