@@ -55,6 +55,8 @@ async def _load_from_url(url: str) -> Optional[ParsedRecipe]:
 
 
 async def _search_and_load(query: str) -> Optional[ParsedRecipe]:
+    from app.recipes.verifier import verify_recipe_match
+
     print(f"Searching web for: {query}")
     urls = await search_recipe(query, max_results=MAX_SEARCH_ATTEMPTS)
 
@@ -67,9 +69,18 @@ async def _search_and_load(query: str) -> Optional[ParsedRecipe]:
     for i, url in enumerate(urls, 1):
         print(f"  [{i}/{len(urls)}] Trying {url}")
         recipe = await _load_from_url(url)
-        if recipe:
-            print(f"  Success via {recipe.parser_used}")
-            return recipe
 
-    print("All search results failed to parse")
+        if not recipe:
+            continue
+
+        print(f"    Parsed via {recipe.parser_used}: {recipe.name}")
+
+        is_match = await verify_recipe_match(query, recipe)
+        if is_match:
+            print(f"  Verified match, using this recipe")
+            return recipe
+        else:
+            print(f"  Rejected by verifier, trying next")
+
+    print("All search results either failed to parse or were rejected as non-matches")
     return None
