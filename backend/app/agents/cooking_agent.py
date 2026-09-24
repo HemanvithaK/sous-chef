@@ -6,7 +6,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 from app.rag.retriever import search_substitutions_verified
-
+from app.recipes.loader import load_recipe as parse_recipe
 
 SYSTEM_PROMPT = """You are Sous Chef, a voice-first cooking copilot.
 You help home cooks through recipes hands-free while they cook.
@@ -17,16 +17,23 @@ Personality:
 - Use natural cooking language.
 
 What you do:
-1. Walk through recipes step by step. One step at a time. Wait for the user to say next.
-2. Set timers when a step involves waiting. Use the set_timer tool.
-3. Handle substitutions when someone is missing an ingredient. Use search_substitution.
-4. Coordinate timing for multiple dishes. Use schedule_dishes.
-5. Answer general cooking questions.
+1. Load recipes. The user will paste a URL or the raw recipe text. Call \
+load_recipe with exactly what they pasted — do not paraphrase. Confirm briefly \
+what you loaded, then offer to start step one.
+2. Walk through recipes step by step. One step at a time. Wait for the user to \
+say next, done, or ready.
+3. Set timers when a step involves waiting. Use the set_timer tool.
+4. Handle substitutions when someone is missing an ingredient. Use \
+search_substitution.
+5. Coordinate timing for multiple dishes. Use schedule_dishes.
+6. Answer general cooking questions.
 
 What you DON'T do:
 - Don't give long explanations unless asked.
-- Don't list all ingredients upfront unless asked. Jump to step 1.
+- Don't list all ingredients upfront unless asked. Jump to step 1 after loading.
 - Don't repeat yourself.
+- Don't invent recipes. If load_recipe fails, ask for a URL or pasted text — do \
+not fabricate steps.
 
 Voice considerations:
 - Avoid bullet points, markdown, or special characters.
@@ -37,16 +44,23 @@ Voice considerations:
 TOOLS = [
     {
         "name": "load_recipe",
-        "description": "Load a recipe by name. Returns the full recipe with ingredients and steps.",
+        "description": (
+            "Load a recipe. Accepts a URL to a recipe website, or raw recipe text "
+            "that the user pastes directly. Extracts ingredients and step-by-step "
+            "instructions."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "recipe_name": {
+                "recipe_query": {
                     "type": "string",
-                    "description": "Name of the recipe to load",
+                    "description": (
+                        "The URL of a recipe page, or the raw recipe text the user "
+                        "provided. Pass exactly what the user gave you."
+                    ),
                 }
             },
-            "required": ["recipe_name"],
+            "required": ["recipe_query"],
         },
     },
     {
@@ -115,68 +129,6 @@ TOOLS = [
 ]
 
 
-SAMPLE_RECIPES = {
-    "thai basil chicken": {
-        "name": "Thai Basil Chicken (Pad Kra Pao)",
-        "servings": 2,
-        "ingredients": [
-            "1 lb ground chicken",
-            "4 cloves garlic, minced",
-            "3-4 Thai chilies, minced",
-            "1 cup Thai basil leaves",
-            "2 tbsp oyster sauce",
-            "1 tbsp soy sauce",
-            "1 tbsp fish sauce",
-            "1 tsp sugar",
-            "2 tbsp vegetable oil",
-        ],
-        "steps": [
-            "Mince the garlic and chilies. Pick the basil leaves off the stems. Mix the oyster sauce, soy sauce, fish sauce, and sugar in a small bowl.",
-            "Heat your wok or large skillet over high heat until it's smoking. Add the oil.",
-            "Add garlic and chilies. Stir-fry for about thirty seconds until fragrant. Don't let the garlic burn.",
-            "Add the ground chicken. Break it up and cook until no longer pink, about three to four minutes. Keep the heat high for browning.",
-            "Pour in the sauce mixture. Toss everything together for about one minute.",
-            "Kill the heat. Toss in the basil leaves and stir until they just wilt. Serve over jasmine rice.",
-        ],
-    },
-    "pasta aglio e olio": {
-        "name": "Spaghetti Aglio e Olio",
-        "servings": 2,
-        "ingredients": [
-            "8 oz spaghetti",
-            "6 cloves garlic, thinly sliced",
-            "1/3 cup extra virgin olive oil",
-            "1/2 tsp red pepper flakes",
-            "1/4 cup fresh parsley, chopped",
-            "Salt to taste",
-        ],
-        "steps": [
-            "Bring a large pot of well-salted water to a rolling boil. Add the spaghetti and cook one minute short of the package time.",
-            "While the pasta cooks, heat the olive oil in a large skillet over medium-low heat. Add the sliced garlic and red pepper flakes. Cook slowly, stirring often, until the garlic is golden. About four to five minutes. Low and slow.",
-            "Before you drain the pasta, scoop out about half a cup of the starchy pasta water. You'll need this.",
-            "Add the drained pasta directly to the garlic oil. Add a splash of pasta water. Toss aggressively over medium heat for about a minute. The starch and oil should come together into a silky sauce.",
-            "Kill the heat, toss in the parsley, and hit it with a final drizzle of good olive oil. Serve immediately.",
-        ],
-    },
-    "scrambled eggs": {
-        "name": "Perfect Scrambled Eggs",
-        "servings": 1,
-        "ingredients": [
-            "3 large eggs",
-            "1 tbsp butter",
-            "Salt and pepper to taste",
-            "1 tbsp chives, chopped (optional)",
-        ],
-        "steps": [
-            "Crack three eggs into a bowl. Don't add salt yet. Whisk until the yolks and whites are fully combined.",
-            "Put a non-stick pan on medium-low heat. Add the butter and let it melt without browning.",
-            "Pour in the eggs. Wait about thirty seconds, then start pushing them gently with a spatula from the edges toward the center. Big, slow folds.",
-            "When the eggs are about seventy percent set but still look wet, pull the pan off the heat. The residual heat finishes them. Season with salt and pepper now.",
-            "Slide onto a plate, top with chives if you have them. Eat immediately. Scrambled eggs wait for no one.",
-        ],
-    },
-}
-
 
 class CookingState(TypedDict):
     messages: Annotated[list, add_messages]
@@ -188,9 +140,9 @@ class CookingSession:
         self.current_step = 0
         self.active_timers = []
 
-    def execute_tool(self, tool_name: str, tool_input: dict) -> str:
+    async def execute_tool(self, tool_name: str, tool_input: dict) -> str:
         if tool_name == "load_recipe":
-            return self._load_recipe(tool_input["recipe_name"])
+            return await self._load_recipe(tool_input["recipe_query"])
         elif tool_name == "get_current_step":
             return self._get_current_step()
         elif tool_name == "next_step":
@@ -204,25 +156,38 @@ class CookingSession:
         else:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
-    def _load_recipe(self, recipe_name: str) -> str:
-        key = recipe_name.lower().strip()
-        for name, recipe in SAMPLE_RECIPES.items():
-            if key in name or name in key:
-                self.current_recipe = recipe
-                self.current_step = 0
-                return json.dumps({
-                    "found": True,
-                    "name": recipe["name"],
-                    "servings": recipe["servings"],
-                    "total_steps": len(recipe["steps"]),
-                    "ingredients": recipe["ingredients"],
-                    "first_step": recipe["steps"][0],
-                })
-        available = list(SAMPLE_RECIPES.keys())
+    async def _load_recipe(self, query: str) -> str:
+        recipe = await parse_recipe(query)
+
+        if not recipe:
+            return json.dumps({
+                "found": False,
+                "message": (
+                    "Couldn't parse a recipe from that. If it was a URL, the site "
+                    "might not be supported or the page didn't load. Ask the user "
+                    "to paste the recipe text directly, or try a different URL."
+                ),
+            })
+
+        self.current_recipe = {
+            "name": recipe.name,
+            "ingredients": recipe.ingredients,
+            "steps": recipe.steps,
+            "servings": recipe.servings,
+            "total_minutes": recipe.total_minutes,
+            "source": recipe.source,
+        }
+        self.current_step = 0
+
         return json.dumps({
-            "found": False,
-            "message": f"No recipe found for '{recipe_name}'.",
-            "available_recipes": available,
+            "found": True,
+            "name": recipe.name,
+            "servings": recipe.servings,
+            "total_minutes": recipe.total_minutes,
+            "total_steps": len(recipe.steps),
+            "ingredients_count": len(recipe.ingredients),
+            "first_step": recipe.steps[0] if recipe.steps else None,
+            "parser_used": recipe.parser_used,
         })
 
     def _get_current_step(self) -> str:
@@ -346,11 +311,11 @@ def build_agent(session: CookingSession):
             return "tools"
         return END
 
-    def call_tools(state: CookingState):
+    async def call_tools(state: CookingState):
         last_message = state["messages"][-1]
         tool_results = []
         for tool_call in last_message.tool_calls:
-            result = session.execute_tool(
+            result = await session.execute_tool(
                 tool_call["name"],
                 tool_call["args"],
             )
