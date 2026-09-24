@@ -8,9 +8,17 @@ from app.recipes.loader import load_recipe
 
 
 URL_CASES = [
-    "https://www.seriouseats.com/pasta-aglio-e-olio-recipe",
     "https://www.bonappetit.com/recipe/bas-best-chocolate-chip-cookies",
+    "https://www.simplyrecipes.com/recipes/homemade_pizza/",
     "https://cooking.nytimes.com/recipes/1015178-plum-torte",
+]
+
+RECIPE_NAME_CASES = [
+    "chicken biryani",
+    "chocolate chip cookies",
+    "pasta aglio e olio",
+    "butter chicken",
+    "sourdough pancakes",
 ]
 
 RAW_TEXT_CASE = """
@@ -34,7 +42,7 @@ Instructions:
 
 async def test_urls():
     print("=" * 68)
-    print("URL PARSING")
+    print("URL PARSING (direct URL, no search)")
     print("=" * 68)
 
     for url in URL_CASES:
@@ -42,38 +50,53 @@ async def test_urls():
         try:
             recipe = await load_recipe(url)
             if recipe:
+                print(f"  RESULT: {recipe.name}")
                 print(f"  Parser: {recipe.parser_used}")
-                print(f"  Name: {recipe.name}")
-                print(f"  Ingredients: {len(recipe.ingredients)}")
-                print(f"  Steps: {len(recipe.steps)}")
-                print(f"  Servings: {recipe.servings}")
-                print(f"  Total minutes: {recipe.total_minutes}")
-                print(f"  First step: {recipe.steps[0][:100] if recipe.steps else 'none'}...")
+                print(f"  Source: {recipe.source}")
+                print(f"  Ingredients: {len(recipe.ingredients)}, Steps: {len(recipe.steps)}")
             else:
-                print("  FAILED — no recipe returned")
+                print("  FAILED even after search fallback")
+        except Exception as e:
+            print(f"  ERROR: {e}")
+
+
+async def test_recipe_names():
+    print("\n" + "=" * 68)
+    print("RECIPE NAME SEARCH (no URL, search the web)")
+    print("=" * 68)
+
+    for name in RECIPE_NAME_CASES:
+        print(f"\nQuery: {name}")
+        try:
+            recipe = await load_recipe(name)
+            if recipe:
+                print(f"  RESULT: {recipe.name}")
+                print(f"  Parser: {recipe.parser_used}")
+                print(f"  Source: {recipe.source}")
+                print(f"  Ingredients: {len(recipe.ingredients)}, Steps: {len(recipe.steps)}")
+            else:
+                print("  FAILED - no working recipe found")
         except Exception as e:
             print(f"  ERROR: {e}")
 
 
 async def test_raw_text():
     print("\n" + "=" * 68)
-    print("RAW TEXT PARSING")
+    print("RAW TEXT (LLM extraction, no search)")
     print("=" * 68)
 
     recipe = await load_recipe(RAW_TEXT_CASE)
     if recipe:
+        print(f"  RESULT: {recipe.name}")
         print(f"  Parser: {recipe.parser_used}")
-        print(f"  Name: {recipe.name}")
-        print(f"  Ingredients: {recipe.ingredients}")
-        print(f"  Steps: {len(recipe.steps)}")
-        for i, step in enumerate(recipe.steps, 1):
-            print(f"    {i}. {step[:80]}...")
+        print(f"  Ingredients: {len(recipe.ingredients)}, Steps: {len(recipe.steps)}")
     else:
         print("  FAILED")
 
 
 async def main():
     await test_urls()
+    await test_recipe_names()
     await test_raw_text()
 
 
