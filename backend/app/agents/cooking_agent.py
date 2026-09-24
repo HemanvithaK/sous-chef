@@ -8,37 +8,43 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 from app.rag.retriever import search_substitutions_verified
 from app.recipes.loader import load_recipe as parse_recipe
 
-SYSTEM_PROMPT = """You are Sous Chef, a voice-first cooking copilot.
-You help home cooks through recipes hands-free while they cook.
+SYSTEM_PROMPT = """You are Sous Chef, a hands-free voice cooking copilot. \
+The user is cooking and cannot type or read — everything is spoken.
 
 Personality:
 - Warm, calm, encouraging. A patient friend who is a great cook.
-- Keep responses SHORT. 1-2 sentences max unless they ask for detail.
-- Use natural cooking language.
+- Keep responses SHORT. One or two sentences. The user has their hands full.
+- Natural spoken language only.
 
-What you do:
-1. Load recipes. The user will paste a URL or the raw recipe text. Call \
-load_recipe with exactly what they pasted — do not paraphrase. Confirm briefly \
-what you loaded, then offer to start step one.
-2. Walk through recipes step by step. One step at a time. Wait for the user to \
-say next, done, or ready.
-3. Set timers when a step involves waiting. Use the set_timer tool.
-4. Handle substitutions when someone is missing an ingredient. Use \
-search_substitution.
-5. Coordinate timing for multiple dishes. Use schedule_dishes.
-6. Answer general cooking questions.
+How recipes work:
+- When the user names a dish ("make chicken biryani", "let's do pasta"), call \
+load_recipe with that dish name. The system will find a real recipe from the web \
+automatically. You do NOT need a URL and you must NEVER ask the user for one.
+- When the user wants you to choose ("you pick", "suggest something", "what should \
+I make", or they name only a category like "something Italian"), call \
+suggest_recipe first. Propose one concrete dish, confirm, THEN call load_recipe.
+- If load_recipe fails after searching, say you couldn't find that one and suggest \
+a different, more common dish. Never ask for a URL. Never invent a recipe.
 
-What you DON'T do:
-- Don't give long explanations unless asked.
-- Don't list all ingredients upfront unless asked. Jump to step 1 after loading.
-- Don't repeat yourself.
-- Don't invent recipes. If load_recipe fails, ask for a URL or pasted text — do \
-not fabricate steps.
+Once a recipe is loaded:
+- Briefly say what you found ("Found a chicken biryani, serves four") and offer to \
+start. Don't read the whole ingredient list unless asked.
+- Walk through ONE step at a time. Wait for the user to say next, done, or ready.
+- Set timers when a step involves waiting. Use set_timer.
+- Handle substitutions with search_substitution when they're missing something.
+- Coordinate multiple dishes with schedule_dishes.
 
-Voice considerations:
-- Avoid bullet points, markdown, or special characters.
+What you never do:
+- Never ask for a URL.
+- Never invent a recipe or its steps. If the tools can't find it, say so.
+- Never give long explanations unless asked.
+- Never repeat yourself.
+
+Speaking style (you are heard, not read):
+- No bullet points, markdown, symbols, or abbreviations.
 - Use contractions.
-- Say numbers naturally: "three hundred fifty degrees" not "350F"."""
+- Say numbers naturally: "three hundred fifty degrees", not "350F".
+- Spell out fractions: "half a cup", not "1/2 cup"."""
 
 
 TOOLS = [
@@ -61,6 +67,28 @@ TOOLS = [
                 }
             },
             "required": ["recipe_query"],
+        },
+    },
+    {
+        "name": "suggest_recipe",
+        "description": (
+            "Use when the user wants YOU to choose a recipe for them — 'you pick', "
+            "'suggest something', 'what should I make', 'surprise me', or when they "
+            "name a category but not a dish ('something Italian', 'a quick dinner'). "
+            "Returns guidance to propose one concrete dish and confirm before loading."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cuisine_or_type": {
+                    "type": "string",
+                    "description": (
+                        "Any constraint the user gave: cuisine, meal type, dietary "
+                        "need, time limit. Empty string if they gave none."
+                    ),
+                }
+            },
+            "required": [],
         },
     },
     {
@@ -140,21 +168,47 @@ class CookingSession:
         self.current_step = 0
         self.active_timers = []
 
+    def _suggest_recipe(self, cuisine_or_type: str) -> str:
+        return json.dumps({
+            "action": "suggest",
+            "note": (
+                "Suggest ONE specific, well-known dish that fits what the user wants "
+                f"(context: '{cuisine_or_type}'). Say the dish name and one sentence "
+                "on why it's a good pick. Then ask if they want to make it. Do NOT "
+                "call load_recipe until they confirm. Pick something concrete and "
+                "common so it's easy to find — for example 'spaghetti carbonara' or "
+                "'chicken stir fry', not an obscure dish."
+            ),
+        })
+
     async def execute_tool(self, tool_name: str, tool_input: dict) -> str:
-        if tool_name == "load_recipe":
-            return await self._load_recipe(tool_input["recipe_query"])
-        elif tool_name == "get_current_step":
-            return self._get_current_step()
-        elif tool_name == "next_step":
-            return self._next_step()
-        elif tool_name == "set_timer":
-            return self._set_timer(tool_input["seconds"], tool_input["label"])
-        elif tool_name == "search_substitution":
-            return self._search_substitution(tool_input["ingredient"])
-        elif tool_name == "schedule_dishes":
-            return self._schedule_dishes(tool_input["dishes"])
-        else:
-            return json.dumps({"error": f"Unknown tool: {tool_name}"})
+        try:
+            if tool_name == "load_recipe":
+                query = tool_input.get("recipe_query") or tool_input.get("recipe_name") or ""
+                return await self._load_recipe(query)
+            elif tool_name == "suggest_recipe":
+                return self._suggest_recipe(tool_input.get("cuisine_or_type", ""))
+            elif tool_name == "get_current_step":
+                return self._get_current_step()
+            elif tool_name == "next_step":
+                return self._next_step()
+            elif tool_name == "set_timer":
+                return self._set_timer(
+                    tool_input.get("seconds", 0),
+                    tool_input.get("label", "timer"),
+                )
+            elif tool_name == "search_substitution":
+                return self._search_substitution(tool_input.get("ingredient", ""))
+            elif tool_name == "schedule_dishes":
+                return self._schedule_dishes(tool_input.get("dishes", []))
+            else:
+                return json.dumps({"error": f"Unknown tool: {tool_name}"})
+        except Exception as e:
+            print(f"Tool '{tool_name}' failed: {e}")
+            return json.dumps({
+                "error": f"That didn't work: {str(e)}",
+                "recovery": "Tell the user something went wrong and ask them to try rephrasing.",
+            })
 
     async def _load_recipe(self, query: str) -> str:
         recipe = await parse_recipe(query)
