@@ -1,110 +1,77 @@
-// frontend/src/App.jsx
-
-// This is the main component of our app. It handles:
-// 1. WebSocket connection to the backend
-// 2. Microphone recording and sending audio
-// 3. Text input as a fallback
-// 4. Displaying the conversation transcript
-
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, MicOff, Send, ChefHat, Wifi, WifiOff } from "lucide-react";
 
 export default function App() {
-  // ── State ──────────────────────────────────────────
-  //
-  // React state holds all the data our UI needs to render.
-  // When state changes, React re-renders the affected parts.
-
-  // Is the WebSocket connected to the backend?
   const [isConnected, setIsConnected] = useState(false);
-
-  // Is the mic currently recording?
   const [isRecording, setIsRecording] = useState(false);
-
-  // Chat transcript — array of {role: "user"|"assistant", text: "..."}
   const [transcript, setTranscript] = useState([]);
-
-  // Text input value (for typing instead of speaking)
   const [textInput, setTextInput] = useState("");
-
-  // Error message to display
   const [error, setError] = useState(null);
 
-  // ── Refs ───────────────────────────────────────────
-  //
-  // Refs hold values that persist across renders but
-  // DON'T trigger re-renders when they change.
-  // Perfect for WebSocket connections and media objects.
-
-  // WebSocket connection reference
   const wsRef = useRef(null);
-
-  // MediaRecorder reference (for mic recording)
   const mediaRecorderRef = useRef(null);
-
-  // Audio chunks collected during recording
   const audioChunksRef = useRef([]);
-
-  // Ref to the bottom of the transcript (for auto-scrolling)
   const transcriptEndRef = useRef(null);
 
-  // ── Auto-scroll transcript ────────────────────────
-  //
-  // Every time a new message is added to the transcript,
-  // scroll to the bottom so the user sees the latest message.
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [transcript]);
 
-  // ── WebSocket Connection ──────────────────────────
-  //
-  // connect() opens a WebSocket to the backend.
-  // We use useCallback to prevent recreating this function
-  // on every render (performance optimization).
+  // ── Play TTS audio from the backend ────────────────
+  const playAudio = useCallback((base64Mp3) => {
+    try {
+      const byteChars = atob(base64Mp3);
+      const byteNumbers = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) {
+        byteNumbers[i] = byteChars.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
 
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.play().catch((e) => console.error("Audio play failed:", e));
+    } catch (e) {
+      console.error("Audio decode failed:", e);
+    }
+  }, []);
+
+  // ── WebSocket connection ───────────────────────────
   const connect = useCallback(() => {
-    // Create a new WebSocket connection.
-    // The URL uses the current host — in development, Vite's
-    // proxy forwards /ws/* to localhost:8000 automatically.
     const ws = new WebSocket(`ws://${window.location.host}/ws/voice`);
 
-    // onopen fires when the connection is established
     ws.onopen = () => {
       console.log("WebSocket connected");
       setIsConnected(true);
       setError(null);
     };
 
-    // onmessage fires when the server sends us data
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
       if (data.type === "transcript") {
-        // Add the message to our transcript
         setTranscript((prev) => [
           ...prev,
           { role: data.role, text: data.text, ts: Date.now() },
         ]);
+      } else if (data.type === "audio") {
+        playAudio(data.data);
       }
     };
 
-    // onclose fires when the connection is lost
     ws.onclose = () => {
       console.log("WebSocket disconnected");
       setIsConnected(false);
     };
 
-    // onerror fires on connection errors
     ws.onerror = () => {
       setError("Cannot connect to server. Is the backend running?");
       setIsConnected(false);
     };
 
-    // Store the WebSocket in a ref so other functions can use it
     wsRef.current = ws;
-  }, []);
-
-  // ── Disconnect ────────────────────────────────────
+  }, [playAudio]);
 
   const disconnect = useCallback(() => {
     if (wsRef.current) {
@@ -114,22 +81,15 @@ export default function App() {
     setIsConnected(false);
   }, []);
 
-  // ── Send Text Message ─────────────────────────────
-  //
-  // Sends a typed text message to the backend.
-  // Used as a fallback when mic isn't available or for testing.
-
+  // ── Send text message ──────────────────────────────
   const sendText = useCallback(() => {
     if (!textInput.trim() || !wsRef.current) return;
 
-    // Add the user's message to the transcript immediately
-    // (don't wait for the server — feels faster)
     setTranscript((prev) => [
       ...prev,
       { role: "user", text: textInput, ts: Date.now() },
     ]);
 
-    // Send the message to the backend as JSON
     wsRef.current.send(
       JSON.stringify({
         type: "text",
@@ -137,11 +97,8 @@ export default function App() {
       })
     );
 
-    // Clear the input field
     setTextInput("");
   }, [textInput]);
-
-  // ── Handle Enter Key ──────────────────────────────
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -150,60 +107,38 @@ export default function App() {
     }
   };
 
-  // ── Microphone Recording ──────────────────────────
-  //
-  // startRecording() asks for mic permission, then records audio.
-  // stopRecording() stops recording and sends the audio to the backend.
-  //
-  // We use the MediaRecorder API, which is built into all modern browsers.
-
+  // ── Microphone recording ───────────────────────────
   const startRecording = async () => {
     try {
-      // Ask the browser for mic access.
-      // This triggers the "Allow microphone?" popup on first use.
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          channelCount: 1, // Mono audio (smaller file, all we need)
-          sampleRate: 16000, // 16kHz (what Whisper expects)
-          echoCancellation: true, // Reduce echo from speakers
-          noiseSuppression: true, // Reduce background noise
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
         },
       });
 
-      // Create a MediaRecorder that records in webm format.
-      // webm is widely supported and Whisper can transcribe it.
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: "audio/webm;codecs=opus",
       });
 
-      // Clear any previous audio chunks
       audioChunksRef.current = [];
 
-      // ondataavailable fires when the recorder has audio data ready.
-      // We collect chunks and combine them when recording stops.
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
 
-      // onstop fires when we call mediaRecorder.stop().
-      // At this point we have all the audio chunks and can send them.
       mediaRecorder.onstop = async () => {
-        // Combine all chunks into one Blob (binary large object)
         const audioBlob = new Blob(audioChunksRef.current, {
           type: "audio/webm",
         });
 
-        // Convert the Blob to base64 so we can send it as JSON.
-        // WebSockets can send binary directly, but JSON is easier
-        // to debug and extend with metadata.
         const reader = new FileReader();
         reader.onloadend = () => {
-          // reader.result looks like "data:audio/webm;base64,SGVsbG8..."
-          // We only want the base64 part after the comma.
           const base64Audio = reader.result.split(",")[1];
-
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(
               JSON.stringify({
@@ -215,12 +150,9 @@ export default function App() {
         };
         reader.readAsDataURL(audioBlob);
 
-        // Stop all audio tracks to release the microphone.
-        // Without this, the browser keeps the mic indicator on.
         stream.getTracks().forEach((track) => track.stop());
       };
 
-      // Start recording
       mediaRecorder.start();
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
@@ -241,11 +173,9 @@ export default function App() {
     }
   };
 
-  // ── Render ────────────────────────────────────────
-
+  // ── Render ─────────────────────────────────────────
   return (
     <div style={styles.container}>
-      {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <ChefHat size={32} color="#f97316" />
@@ -260,7 +190,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Error Banner */}
       {error && (
         <div style={styles.error}>
           {error}
@@ -270,7 +199,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Transcript Area */}
       <div style={styles.transcript}>
         {transcript.length === 0 && (
           <div style={styles.emptyState}>
@@ -287,13 +215,17 @@ export default function App() {
             key={i}
             style={{
               ...styles.message,
-              ...(msg.role === "user" ? styles.userMessage : styles.assistantMessage),
+              ...(msg.role === "user"
+                ? styles.userMessage
+                : styles.assistantMessage),
             }}
           >
             <div
               style={{
                 ...styles.bubble,
-                ...(msg.role === "user" ? styles.userBubble : styles.assistantBubble),
+                ...(msg.role === "user"
+                  ? styles.userBubble
+                  : styles.assistantBubble),
               }}
             >
               {msg.text}
@@ -303,9 +235,7 @@ export default function App() {
         <div ref={transcriptEndRef} />
       </div>
 
-      {/* Bottom Controls */}
       <div style={styles.controls}>
-        {/* Connect/Disconnect Button */}
         <button
           onClick={isConnected ? disconnect : connect}
           style={{
@@ -316,7 +246,6 @@ export default function App() {
           {isConnected ? "Disconnect" : "Connect"}
         </button>
 
-        {/* Text Input */}
         <div style={styles.inputRow}>
           <input
             type="text"
@@ -339,7 +268,6 @@ export default function App() {
           </button>
         </div>
 
-        {/* Mic Button */}
         <button
           onClick={isRecording ? stopRecording : startRecording}
           disabled={!isConnected}
@@ -350,7 +278,11 @@ export default function App() {
             animation: isRecording ? "pulse 1.5s infinite" : "none",
           }}
         >
-          {isRecording ? <MicOff size={28} color="white" /> : <Mic size={28} color="white" />}
+          {isRecording ? (
+            <MicOff size={28} color="white" />
+          ) : (
+            <Mic size={28} color="white" />
+          )}
         </button>
         <p style={styles.micHint}>
           {isRecording
@@ -361,7 +293,6 @@ export default function App() {
         </p>
       </div>
 
-      {/* Pulse animation for recording */}
       <style>{`
         @keyframes pulse {
           0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
@@ -372,11 +303,6 @@ export default function App() {
     </div>
   );
 }
-
-// ── Styles ────────────────────────────────────────────
-//
-// Inline styles instead of CSS modules or Tailwind.
-// Keeps everything in one file for Phase 1.
 
 const styles = {
   container: {
@@ -393,21 +319,9 @@ const styles = {
     alignItems: "center",
     marginBottom: "16px",
   },
-  headerLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-  },
-  headerRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  },
-  title: {
-    fontSize: "24px",
-    fontWeight: "bold",
-    letterSpacing: "-0.5px",
-  },
+  headerLeft: { display: "flex", alignItems: "center", gap: "10px" },
+  headerRight: { display: "flex", alignItems: "center", gap: "8px" },
+  title: { fontSize: "24px", fontWeight: "bold", letterSpacing: "-0.5px" },
   error: {
     background: "rgba(220, 38, 38, 0.15)",
     border: "1px solid rgba(220, 38, 38, 0.3)",
@@ -442,25 +356,11 @@ const styles = {
     minHeight: "300px",
     gap: "12px",
   },
-  emptyTitle: {
-    fontSize: "18px",
-    fontWeight: "600",
-    color: "#a8a29e",
-  },
-  emptySubtitle: {
-    fontSize: "14px",
-    color: "#78716c",
-  },
-  message: {
-    marginBottom: "10px",
-    display: "flex",
-  },
-  userMessage: {
-    justifyContent: "flex-end",
-  },
-  assistantMessage: {
-    justifyContent: "flex-start",
-  },
+  emptyTitle: { fontSize: "18px", fontWeight: "600", color: "#a8a29e" },
+  emptySubtitle: { fontSize: "14px", color: "#78716c" },
+  message: { marginBottom: "10px", display: "flex" },
+  userMessage: { justifyContent: "flex-end" },
+  assistantMessage: { justifyContent: "flex-start" },
   bubble: {
     maxWidth: "80%",
     padding: "10px 14px",
@@ -496,11 +396,7 @@ const styles = {
     fontWeight: "600",
     cursor: "pointer",
   },
-  inputRow: {
-    display: "flex",
-    width: "100%",
-    gap: "8px",
-  },
+  inputRow: { display: "flex", width: "100%", gap: "8px" },
   textInput: {
     flex: 1,
     padding: "10px 14px",
@@ -532,8 +428,5 @@ const styles = {
     justifyContent: "center",
     marginTop: "8px",
   },
-  micHint: {
-    fontSize: "12px",
-    color: "#78716c",
-  },
+  micHint: { fontSize: "12px", color: "#78716c" },
 };

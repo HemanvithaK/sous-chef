@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 
 from app.agents.cooking_agent import CookingSession, build_agent
+from app.voice.tts import synthesize_speech
 
 load_dotenv()
 
@@ -25,17 +26,24 @@ class VoicePipeline:
             timeout=30.0,
         )
 
-    async def process_text(self, text: str) -> str:
+    async def process_text(self, text: str) -> dict:
         return await self._run_agent(text)
 
-    async def process_audio(self, audio_base64: str) -> tuple[str, str]:
+    async def process_audio(self, audio_base64: str) -> dict:
         user_text = await self._transcribe(audio_base64)
         if not user_text or not user_text.strip():
-            return "", "Sorry, I didn't catch that. Could you say it again?"
-        response = await self._run_agent(user_text)
-        return user_text, response
+            fallback = "Sorry, I didn't catch that. Could you say it again?"
+            audio = await synthesize_speech(fallback)
+            return {
+                "user_text": "",
+                "text": fallback,
+                "audio": audio,
+            }
+        result = await self._run_agent(user_text)
+        result["user_text"] = user_text
+        return result
 
-    async def _run_agent(self, user_text: str) -> str:
+    async def _run_agent(self, user_text: str) -> dict:
         self.message_history.append(HumanMessage(content=user_text))
 
         try:
@@ -43,15 +51,32 @@ class VoicePipeline:
                 {"messages": self.message_history}
             )
             ai_message = result["messages"][-1]
-            response_text = ai_message.content
-
+            response_text = self._extract_text(ai_message.content)
             self.message_history = result["messages"]
-
-            return response_text
 
         except Exception as e:
             print(f"Agent error: {e}")
-            return "Sorry, I'm having trouble right now. Try again?"
+            response_text = "Sorry, I'm having trouble right now. Try again?"
+
+        audio_b64 = await synthesize_speech(response_text)
+
+        return {
+            "text": response_text,
+            "audio": audio_b64,
+        }
+
+    def _extract_text(self, content) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+                elif isinstance(block, str):
+                    parts.append(block)
+            return " ".join(parts).strip()
+        return str(content)
 
     async def _transcribe(self, audio_base64: str) -> str:
         try:

@@ -69,42 +69,42 @@ async def voice_endpoint(ws: WebSocket):
             msg_type = data.get("type", "")
 
             if msg_type == "text":
-                # User typed a text message (for testing without mic)
                 user_text = data.get("content", "")
                 print(f"User said: {user_text}")
+                try:
+                    result = await pipeline.process_text(user_text)
+                except Exception as e:
+                    print(f"process_text failed: {e}")
+                    result = {"text": "Something went wrong. Try again?", "audio": None}
 
-                # Process through our pipeline:
-                # text → Claude LLM → response text
-                response = await pipeline.process_text(user_text)
-
-                # Send the response back to the browser
                 await ws.send_json({
                     "type": "transcript",
                     "role": "assistant",
-                    "text": response,
+                    "text": result["text"],
                 })
+                if result.get("audio"):
+                    await ws.send_json({"type": "audio", "data": result["audio"]})
 
             elif msg_type == "audio":
-                # User sent audio from their microphone
                 audio_base64 = data.get("data", "")
+                result = await pipeline.process_audio(audio_base64)
 
-                # Process through our full pipeline:
-                # audio → Whisper STT → Claude LLM → response text
-                user_text, response = await pipeline.process_audio(audio_base64)
-
-                # Send the user's transcription back
-                await ws.send_json({
-                    "type": "transcript",
-                    "role": "user",
-                    "text": user_text,
-                })
-
-                # Send the assistant's response back
+                if result.get("user_text"):
+                    await ws.send_json({
+                        "type": "transcript",
+                        "role": "user",
+                        "text": result["user_text"],
+                    })
                 await ws.send_json({
                     "type": "transcript",
                     "role": "assistant",
-                    "text": response,
+                    "text": result["text"],
                 })
+                if result.get("audio"):
+                    await ws.send_json({
+                        "type": "audio",
+                        "data": result["audio"],
+                    })
 
     except WebSocketDisconnect:
         # This fires when the browser tab closes or user disconnects.
