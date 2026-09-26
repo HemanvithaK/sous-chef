@@ -44,7 +44,9 @@ Speaking style (you are heard, not read):
 - No bullet points, markdown, symbols, or abbreviations.
 - Use contractions.
 - Say numbers naturally: "three hundred fifty degrees", not "350F".
-- Spell out fractions: "half a cup", not "1/2 cup"."""
+- Spell out fractions: "half a cup", not "1/2 cup".
+- When asked about quantities or what ingredients are needed, call get_ingredients. \
+Never guess amounts from memory when a recipe is loaded."""
 
 
 TOOLS = [
@@ -90,6 +92,15 @@ TOOLS = [
             },
             "required": [],
         },
+    },
+        {
+        "name": "get_ingredients",
+        "description": (
+            "Get the full ingredient list with quantities for the loaded recipe. "
+            "Use whenever the user asks about amounts, quantities, what they need, "
+            "or how much of something to use."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "get_current_step",
@@ -201,6 +212,8 @@ class CookingSession:
                 return self._search_substitution(tool_input.get("ingredient", ""))
             elif tool_name == "schedule_dishes":
                 return self._schedule_dishes(tool_input.get("dishes", []))
+            elif tool_name == "get_ingredients":
+                return self._get_ingredients()
             else:
                 return json.dumps({"error": f"Unknown tool: {tool_name}"})
         except Exception as e:
@@ -287,6 +300,14 @@ class CookingSession:
             "duration": time_str,
             "label": label,
         })
+    def _get_ingredients(self) -> str:
+        if not self.current_recipe:
+            return json.dumps({"error": "No recipe loaded yet."})
+        return json.dumps({
+            "recipe": self.current_recipe["name"],
+            "servings": self.current_recipe.get("servings"),
+            "ingredients": self.current_recipe["ingredients"],
+        })
 
     def _search_substitution(self, ingredient: str) -> str:
         result = search_substitutions_verified(ingredient, top_k=3)
@@ -336,7 +357,7 @@ class CookingSession:
 def build_agent(session: CookingSession):
     llm = ChatAnthropic(
         model="claude-sonnet-5",
-        max_tokens=300,
+        max_tokens=600,
     )
 
     tools_for_llm = []

@@ -10,12 +10,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # We import our voice pipeline 
 from app.voice_pipeline import VoicePipeline
+from app.voice.tts import prewarm_fillers
 
 # Create the FastAPI application instance
 app = FastAPI(
     title="Sous Chef - Voice Cooking Copilot",
     version="0.1.0",
 )
+@app.on_event("startup")
+async def startup():
+    try:
+        await prewarm_fillers()
+    except Exception as e:
+        print(f"Filler prewarm failed (non-fatal): {e}")
 
 # CORS middleware allows the frontend (running on port 3000)
 # to talk to the backend (running on port 8000).
@@ -87,24 +94,37 @@ async def voice_endpoint(ws: WebSocket):
 
             elif msg_type == "audio":
                 audio_base64 = data.get("data", "")
-                result = await pipeline.process_audio(audio_base64)
 
-                if result.get("user_text"):
-                    await ws.send_json({
-                        "type": "transcript",
-                        "role": "user",
-                        "text": result["user_text"],
-                    })
+                user_text = await pipeline.transcribe_only(audio_base64)
+                if not user_text:
+                    continue
+
+                await ws.send_json({
+                    "type": "transcript",
+                    "role": "user",
+                    "text": user_text,
+                })
+
+                from app.voice.fillers import random_ack
+                from app.voice.tts import synthesize_cached
+
+                ack_audio = await synthesize_cached(random_ack())
+                if ack_audio:
+                    await ws.send_json({"type": "audio", "data": ack_audio})
+
+                try:
+                    result = await pipeline.run_agent_only(user_text)
+                except Exception as e:
+                    print(f"Agent failed: {e}")
+                    result = {"text": "Something went wrong. Try again?", "audio": None}
+
                 await ws.send_json({
                     "type": "transcript",
                     "role": "assistant",
                     "text": result["text"],
                 })
                 if result.get("audio"):
-                    await ws.send_json({
-                        "type": "audio",
-                        "data": result["audio"],
-                    })
+                    await ws.send_json({"type": "audio", "data": result["audio"]})
 
     except WebSocketDisconnect:
         # This fires when the browser tab closes or user disconnects.

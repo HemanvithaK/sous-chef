@@ -15,6 +15,8 @@ export default function App() {
   const transcriptEndRef = useRef(null);
   const vadRef = useRef(null);
   const handsFreeRef = useRef(false);
+  const audioQueueRef = useRef([]);
+  const isPlayingRef = useRef(false);
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -26,7 +28,21 @@ export default function App() {
 
   // Play TTS audio, pausing the mic while it plays so the mic
   // does not hear Sous Chef's own voice and transcribe it.
-  const playAudio = useCallback((base64Mp3) => {
+    const playNext = useCallback(() => {
+    if (audioQueueRef.current.length === 0) {
+      isPlayingRef.current = false;
+      if (vadRef.current && handsFreeRef.current) {
+        vadRef.current.resume();
+        setStatus("listening");
+      } else {
+        setStatus("idle");
+      }
+      return;
+    }
+
+    isPlayingRef.current = true;
+    const base64Mp3 = audioQueueRef.current.shift();
+
     try {
       const byteChars = atob(base64Mp3);
       const byteNumbers = new Array(byteChars.length);
@@ -38,27 +54,29 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
 
-      if (vadRef.current) vadRef.current.pause();
-      setStatus("speaking");
-
       audio.onended = () => {
         URL.revokeObjectURL(url);
-        if (vadRef.current && handsFreeRef.current) {
-          vadRef.current.resume();
-          setStatus("listening");
-        } else {
-          setStatus("idle");
-        }
+        playNext();
       };
 
       audio.play().catch((e) => {
         console.error("Audio play failed:", e);
-        if (vadRef.current && handsFreeRef.current) vadRef.current.resume();
+        playNext();
       });
     } catch (e) {
       console.error("Audio decode failed:", e);
+      playNext();
     }
   }, []);
+
+  const playAudio = useCallback((base64Mp3) => {
+    audioQueueRef.current.push(base64Mp3);
+    if (vadRef.current) vadRef.current.pause();
+    setStatus("speaking");
+    if (!isPlayingRef.current) {
+      playNext();
+    }
+  }, [playNext]);
 
   const sendUtterance = useCallback((float32Audio) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;

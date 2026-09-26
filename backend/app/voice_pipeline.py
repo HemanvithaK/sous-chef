@@ -101,3 +101,10 @@ class VoicePipeline:
 
     async def shutdown(self):
         await self.groq_client.aclose()
+
+    async def transcribe_only(self, audio_base64: str) -> str:
+        text = await self._transcribe(audio_base64)
+        return text.strip() if text else ""
+
+    async def run_agent_only(self, user_text: str) -> dict:
+        return await self._run_agent(user_text)

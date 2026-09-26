@@ -50,3 +50,21 @@ _tts = TextToSpeech()
 
 async def synthesize_speech(text: str) -> str | None:
     return await _tts.synthesize(text)
+
+_filler_cache: dict[str, str] = {}
+
+
+async def synthesize_cached(text: str) -> str | None:
+    if text in _filler_cache:
+        return _filler_cache[text]
+    audio = await _tts.synthesize(text)
+    if audio:
+        _filler_cache[text] = audio
+    return audio
+
+
+async def prewarm_fillers():
+    from app.voice.fillers import ACK_PHRASES, SEARCH_PHRASES
+    for phrase in ACK_PHRASES + SEARCH_PHRASES:
+        await synthesize_cached(phrase)
+    print(f"Prewarmed {len(_filler_cache)} filler phrases")
