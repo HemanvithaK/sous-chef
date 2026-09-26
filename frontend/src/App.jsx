@@ -1,23 +1,31 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Mic, MicOff, Send, ChefHat, Wifi, WifiOff } from "lucide-react";
+import { Mic, Send, ChefHat, Wifi, WifiOff, Ear } from "lucide-react";
+import { useVAD } from "./hooks/useVAD";
+import { float32ToWavBase64 } from "./lib/audio";
 
 export default function App() {
   const [isConnected, setIsConnected] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [handsFree, setHandsFree] = useState(false);
   const [transcript, setTranscript] = useState([]);
   const [textInput, setTextInput] = useState("");
   const [error, setError] = useState(null);
+  const [status, setStatus] = useState("idle"); // idle | listening | hearing | thinking | speaking
 
   const wsRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
   const transcriptEndRef = useRef(null);
+  const vadRef = useRef(null);
+  const handsFreeRef = useRef(false);
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [transcript]);
 
-  // ── Play TTS audio from the backend ────────────────
+  useEffect(() => {
+    handsFreeRef.current = handsFree;
+  }, [handsFree]);
+
+  // Play TTS audio, pausing the mic while it plays so the mic
+  // does not hear Sous Chef's own voice and transcribe it.
   const playAudio = useCallback((base64Mp3) => {
     try {
       const byteChars = atob(base64Mp3);
@@ -28,28 +36,56 @@ export default function App() {
       const byteArray = new Uint8Array(byteNumbers);
       const blob = new Blob([byteArray], { type: "audio/mpeg" });
       const url = URL.createObjectURL(blob);
-
       const audio = new Audio(url);
-      audio.onended = () => URL.revokeObjectURL(url);
-      audio.play().catch((e) => console.error("Audio play failed:", e));
+
+      if (vadRef.current) vadRef.current.pause();
+      setStatus("speaking");
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        if (vadRef.current && handsFreeRef.current) {
+          vadRef.current.resume();
+          setStatus("listening");
+        } else {
+          setStatus("idle");
+        }
+      };
+
+      audio.play().catch((e) => {
+        console.error("Audio play failed:", e);
+        if (vadRef.current && handsFreeRef.current) vadRef.current.resume();
+      });
     } catch (e) {
       console.error("Audio decode failed:", e);
     }
   }, []);
 
-  // ── WebSocket connection ───────────────────────────
+  const sendUtterance = useCallback((float32Audio) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    const base64Wav = float32ToWavBase64(float32Audio, 16000);
+    setStatus("thinking");
+    wsRef.current.send(JSON.stringify({ type: "audio", data: base64Wav }));
+  }, []);
+
+  const vad = useVAD({
+    onSpeechStart: () => setStatus("hearing"),
+    onSpeechEnd: (audio) => sendUtterance(audio),
+  });
+
+  useEffect(() => {
+    vadRef.current = vad;
+  }, [vad]);
+
   const connect = useCallback(() => {
     const ws = new WebSocket(`ws://${window.location.host}/ws/voice`);
 
     ws.onopen = () => {
-      console.log("WebSocket connected");
       setIsConnected(true);
       setError(null);
     };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-
       if (data.type === "transcript") {
         setTranscript((prev) => [
           ...prev,
@@ -61,8 +97,10 @@ export default function App() {
     };
 
     ws.onclose = () => {
-      console.log("WebSocket disconnected");
       setIsConnected(false);
+      setHandsFree(false);
+      if (vadRef.current) vadRef.current.stop();
+      setStatus("idle");
     };
 
     ws.onerror = () => {
@@ -74,30 +112,42 @@ export default function App() {
   }, [playAudio]);
 
   const disconnect = useCallback(() => {
+    if (vadRef.current) vadRef.current.stop();
+    setHandsFree(false);
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
     setIsConnected(false);
+    setStatus("idle");
   }, []);
 
-  // ── Send text message ──────────────────────────────
+  const toggleHandsFree = useCallback(async () => {
+    if (handsFree) {
+      vad.stop();
+      setHandsFree(false);
+      setStatus("idle");
+    } else {
+      try {
+        await vad.start();
+        setHandsFree(true);
+        setStatus("listening");
+        setError(null);
+      } catch (err) {
+        setError(`Couldn't start listening: ${err.message}`);
+      }
+    }
+  }, [handsFree, vad]);
+
   const sendText = useCallback(() => {
     if (!textInput.trim() || !wsRef.current) return;
-
     setTranscript((prev) => [
       ...prev,
       { role: "user", text: textInput, ts: Date.now() },
     ]);
-
-    wsRef.current.send(
-      JSON.stringify({
-        type: "text",
-        content: textInput,
-      })
-    );
-
+    wsRef.current.send(JSON.stringify({ type: "text", content: textInput }));
     setTextInput("");
+    setStatus("thinking");
   }, [textInput]);
 
   const handleKeyDown = (e) => {
@@ -107,73 +157,14 @@ export default function App() {
     }
   };
 
-  // ── Microphone recording ───────────────────────────
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
+  const statusLabel = {
+    idle: isConnected ? "Connected" : "Not connected",
+    listening: "Listening... just talk",
+    hearing: "Hearing you...",
+    thinking: "Thinking...",
+    speaking: "Speaking...",
+  }[status];
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
-      });
-
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: "audio/webm",
-        });
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64Audio = reader.result.split(",")[1];
-          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(
-              JSON.stringify({
-                type: "audio",
-                data: base64Audio,
-              })
-            );
-          }
-        };
-        reader.readAsDataURL(audioBlob);
-
-        stream.getTracks().forEach((track) => track.stop());
-      };
-
-      mediaRecorder.start();
-      mediaRecorderRef.current = mediaRecorder;
-      setIsRecording(true);
-    } catch (err) {
-      if (err.name === "NotAllowedError") {
-        setError("Microphone access denied. Please allow mic access.");
-      } else {
-        setError(`Mic error: ${err.message}`);
-      }
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current = null;
-      setIsRecording(false);
-    }
-  };
-
-  // ── Render ─────────────────────────────────────────
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -194,7 +185,7 @@ export default function App() {
         <div style={styles.error}>
           {error}
           <button onClick={() => setError(null)} style={styles.errorClose}>
-            ✕
+            X
           </button>
         </div>
       )}
@@ -205,7 +196,7 @@ export default function App() {
             <ChefHat size={64} color="#44403c" />
             <p style={styles.emptyTitle}>Ready to cook?</p>
             <p style={styles.emptySubtitle}>
-              Connect and say: "Let's make pasta"
+              Connect, tap Start Listening, and just talk.
             </p>
           </div>
         )}
@@ -246,13 +237,47 @@ export default function App() {
           {isConnected ? "Disconnect" : "Connect"}
         </button>
 
+        <div
+          style={{
+            ...styles.statusPill,
+            color:
+              status === "listening" || status === "hearing"
+                ? "#4ade80"
+                : status === "speaking"
+                ? "#f97316"
+                : "#a8a29e",
+          }}
+        >
+          {statusLabel}
+        </div>
+
+        <button
+          onClick={toggleHandsFree}
+          disabled={!isConnected}
+          style={{
+            ...styles.micButton,
+            background: handsFree ? "#dc2626" : "#f97316",
+            opacity: isConnected ? 1 : 0.3,
+            animation: status === "hearing" ? "pulse 1.2s infinite" : "none",
+          }}
+        >
+          {handsFree ? (
+            <Ear size={28} color="white" />
+          ) : (
+            <Mic size={28} color="white" />
+          )}
+        </button>
+        <p style={styles.micHint}>
+          {handsFree ? "Tap to stop listening" : "Tap to go hands-free"}
+        </p>
+
         <div style={styles.inputRow}>
           <input
             type="text"
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isConnected ? "Type a message..." : "Connect first"}
+            placeholder={isConnected ? "Or type here..." : "Connect first"}
             disabled={!isConnected}
             style={styles.textInput}
           />
@@ -267,37 +292,13 @@ export default function App() {
             <Send size={20} />
           </button>
         </div>
-
-        <button
-          onClick={isRecording ? stopRecording : startRecording}
-          disabled={!isConnected}
-          style={{
-            ...styles.micButton,
-            background: isRecording ? "#dc2626" : "#f97316",
-            opacity: isConnected ? 1 : 0.3,
-            animation: isRecording ? "pulse 1.5s infinite" : "none",
-          }}
-        >
-          {isRecording ? (
-            <MicOff size={28} color="white" />
-          ) : (
-            <Mic size={28} color="white" />
-          )}
-        </button>
-        <p style={styles.micHint}>
-          {isRecording
-            ? "Recording... tap to stop"
-            : isConnected
-            ? "Tap to speak"
-            : "Connect to start"}
-        </p>
       </div>
 
       <style>{`
         @keyframes pulse {
-          0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
-          70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+          0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.5); }
+          70% { box-shadow: 0 0 0 18px rgba(74, 222, 128, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
         }
       `}</style>
     </div>
@@ -345,7 +346,7 @@ const styles = {
     flex: 1,
     overflowY: "auto",
     marginBottom: "16px",
-    minHeight: "300px",
+    minHeight: "280px",
   },
   emptyState: {
     display: "flex",
@@ -353,11 +354,16 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     height: "100%",
-    minHeight: "300px",
+    minHeight: "280px",
     gap: "12px",
   },
   emptyTitle: { fontSize: "18px", fontWeight: "600", color: "#a8a29e" },
-  emptySubtitle: { fontSize: "14px", color: "#78716c" },
+  emptySubtitle: {
+    fontSize: "14px",
+    color: "#78716c",
+    textAlign: "center",
+    maxWidth: "260px",
+  },
   message: { marginBottom: "10px", display: "flex" },
   userMessage: { justifyContent: "flex-end" },
   assistantMessage: { justifyContent: "flex-start" },
@@ -382,7 +388,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    gap: "12px",
+    gap: "10px",
     paddingTop: "8px",
     borderTop: "1px solid #292524",
   },
@@ -396,7 +402,19 @@ const styles = {
     fontWeight: "600",
     cursor: "pointer",
   },
-  inputRow: { display: "flex", width: "100%", gap: "8px" },
+  statusPill: { fontSize: "13px", fontWeight: "600", minHeight: "18px" },
+  micButton: {
+    width: "72px",
+    height: "72px",
+    borderRadius: "50%",
+    border: "none",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  micHint: { fontSize: "12px", color: "#78716c" },
+  inputRow: { display: "flex", width: "100%", gap: "8px", marginTop: "6px" },
   textInput: {
     flex: 1,
     padding: "10px 14px",
@@ -417,16 +435,4 @@ const styles = {
     display: "flex",
     alignItems: "center",
   },
-  micButton: {
-    width: "64px",
-    height: "64px",
-    borderRadius: "50%",
-    border: "none",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: "8px",
-  },
-  micHint: { fontSize: "12px", color: "#78716c" },
 };
