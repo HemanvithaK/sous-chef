@@ -15,7 +15,8 @@ load_dotenv()
 class VoicePipeline:
     def __init__(self):
         self.session = CookingSession()
-        self.agent = build_agent(self.session)
+        self.agent = build_agent(self.session, model="claude-sonnet-5")
+        self.fast_agent = build_agent(self.session, model="claude-haiku-4-5-20251001")
         self.message_history = []
 
         self.groq_client = httpx.AsyncClient(
@@ -44,26 +45,25 @@ class VoicePipeline:
         return result
 
     async def _run_agent(self, user_text: str) -> dict:
+        from app.agents.cooking_agent import is_simple_turn
+
         self.message_history.append(HumanMessage(content=user_text))
+        agent = self.fast_agent if is_simple_turn(user_text) else self.agent
+
+        agent = self.fast_agent if is_simple_turn(user_text) else self.agent
+        print(f"[route] {'HAIKU' if is_simple_turn(user_text) else 'SONNET'} <- {user_text[:40]}")
 
         try:
-            result = await self.agent.ainvoke(
-                {"messages": self.message_history}
-            )
+            result = await agent.ainvoke({"messages": self.message_history})
             ai_message = result["messages"][-1]
             response_text = self._extract_text(ai_message.content)
             self.message_history = result["messages"]
-
         except Exception as e:
             print(f"Agent error: {e}")
             response_text = "Sorry, I'm having trouble right now. Try again?"
 
         audio_b64 = await synthesize_speech(response_text)
-
-        return {
-            "text": response_text,
-            "audio": audio_b64,
-        }
+        return {"text": response_text, "audio": audio_b64}
 
     def _extract_text(self, content) -> str:
         if isinstance(content, str):

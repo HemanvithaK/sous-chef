@@ -8,6 +8,19 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 from app.rag.retriever import search_substitutions_verified
 from app.recipes.loader import load_recipe as parse_recipe
 
+SIMPLE_PATTERNS = [
+    "next", "done", "ok", "okay", "yes", "yeah", "yep", "sure",
+    "got it", "ready", "finished", "continue", "go on", "next step",
+    "what's next", "whats next", "repeat", "again", "say that again",
+]
+
+
+def is_simple_turn(text: str) -> bool:
+    cleaned = text.lower().strip().rstrip(".!?")
+    if len(cleaned.split()) > 4:
+        return False
+    return any(cleaned == p or cleaned.startswith(p + " ") for p in SIMPLE_PATTERNS)
+
 SYSTEM_PROMPT = """You are Sous Chef, a hands-free voice cooking copilot. \
 The user is cooking and cannot type or read — everything is spoken.
 
@@ -354,12 +367,12 @@ class CookingSession:
         })
 
 
-def build_agent(session: CookingSession):
+def build_agent(session: CookingSession, model: str = "claude-sonnet-5"):
     llm = ChatAnthropic(
-        model="claude-sonnet-5",
-        max_tokens=600,
+        model=model,
+        max_tokens=300,
     )
-
+    
     tools_for_llm = []
     for t in TOOLS:
         tools_for_llm.append({
