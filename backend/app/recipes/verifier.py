@@ -47,6 +47,73 @@ Respond with ONLY a JSON object:
 
 Output the JSON object and nothing else. No preamble, no code fences."""
 
+QUALITY_PROMPT = """You are judging whether a recipe is detailed enough to follow \
+hands-free by voice, while cooking.
+
+The user cannot see the recipe. They only hear one step at a time. So each step \
+must tell them what to do AND how to know when it is done.
+
+A recipe is GOOD ENOUGH when:
+- Steps describe concrete actions with enough detail to act on.
+- There are cues for timing, heat level, or doneness somewhere in the steps.
+- A reasonably confident home cook could follow it without looking anything up.
+
+A recipe is NOT GOOD ENOUGH when:
+- Steps are one-liners that assume you can see the full recipe ("thicken the \
+cream", "make the sauce", "cook the chicken").
+- It refers to things not included ("see notes", "follow package directions").
+- Critical steps are missing entirely — it jumps from raw ingredients to finished \
+dish.
+
+Judge the recipe as a whole. A single short step among detailed ones is fine.
+
+Respond with ONLY a JSON object:
+{"good_enough": true or false, "reason": "one short sentence"}
+
+Output the JSON and nothing else."""
+
+
+class QualityJudge:
+    def __init__(self):
+        self._client = None
+
+    def _ensure_client(self):
+        if self._client is None:
+            self._client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        return self._client
+
+    async def judge(self, recipe: ParsedRecipe) -> bool:
+        steps_text = "\n".join(
+            f"{i}. {s}" for i, s in enumerate(recipe.steps[:12], 1)
+        )
+        user_message = (
+            f"Recipe: {recipe.name}\n\n"
+            f"Steps:\n{steps_text}\n\n"
+            f"Is this detailed enough to follow by voice while cooking?"
+        )
+
+        try:
+            client = self._ensure_client()
+            response = await client.messages.create(
+                model=VERIFIER_MODEL,
+                max_tokens=150,
+                system=QUALITY_PROMPT,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            parsed = extract_json_object(response.content[0].text)
+            good = bool(parsed.get("good_enough", False))
+            print(f"    Quality judge: {good} ({parsed.get('reason', '')})")
+            return good
+        except Exception as e:
+            print(f"    Quality judge error (accepting by default): {e}")
+            return True
+
+
+_quality_judge = QualityJudge()
+
+
+async def judge_recipe_quality(recipe: ParsedRecipe) -> bool:
+    return await _quality_judge.judge(recipe)
 
 class RecipeVerifier:
     def __init__(self):
