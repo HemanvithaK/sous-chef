@@ -49,6 +49,8 @@ start. Don't read the whole ingredient list unless asked.
 - Set timers when a step involves waiting. Use set_timer.
 - Handle substitutions with search_substitution when they're missing something.
 - Coordinate multiple dishes with schedule_dishes.
+- The user can move around: next, back, repeat, or jump to a step number. \
+Use the matching tool rather than reciting from memory.
 
 What you never do:
 - Never ask for a URL.
@@ -132,6 +134,30 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {},
+        },
+    },
+        {
+        "name": "previous_step",
+        "description": "Go back one step. Use for 'go back', 'previous step', 'wait, what was the last one'.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "repeat_step",
+        "description": "Say the current step again without moving. Use for 'repeat that', 'say again', 'what was that', 'I missed it'.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "go_to_step",
+        "description": "Jump to a specific step number. Use for 'go to step four', 'take me back to step two'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "step_number": {
+                    "type": "integer",
+                    "description": "The step number to jump to, counting from 1.",
+                }
+            },
+            "required": ["step_number"],
         },
     },
     {
@@ -254,6 +280,39 @@ class CookingSession:
                 "'chicken stir fry', not an obscure dish."
             ),
         })
+    def _previous_step(self) -> str:
+        if not self.current_recipe:
+            return json.dumps({"error": "No recipe loaded yet."})
+        if self.current_step <= 0:
+            return json.dumps({
+                "at_start": True,
+                "message": "Already on the first step.",
+                "instruction": self.current_recipe["steps"][0],
+            })
+        self.current_step -= 1
+        return json.dumps({
+            "step_number": self.current_step + 1,
+            "total_steps": len(self.current_recipe["steps"]),
+            "instruction": self.current_recipe["steps"][self.current_step],
+        })
+
+    def _repeat_step(self) -> str:
+        return self._get_current_step()
+
+    def _go_to_step(self, step_number: int) -> str:
+        if not self.current_recipe:
+            return json.dumps({"error": "No recipe loaded yet."})
+        total = len(self.current_recipe["steps"])
+        if step_number < 1 or step_number > total:
+            return json.dumps({
+                "error": f"Step {step_number} doesn't exist. This recipe has {total} steps.",
+            })
+        self.current_step = step_number - 1
+        return json.dumps({
+            "step_number": step_number,
+            "total_steps": total,
+            "instruction": self.current_recipe["steps"][self.current_step],
+        })
 
     async def execute_tool(self, tool_name: str, tool_input: dict) -> str:
         try:
@@ -266,6 +325,12 @@ class CookingSession:
                 return self._get_current_step()
             elif tool_name == "next_step":
                 return self._next_step()
+            elif tool_name == "previous_step":
+                return self._previous_step()
+            elif tool_name == "repeat_step":
+                return self._repeat_step()
+            elif tool_name == "go_to_step":
+                return self._go_to_step(int(tool_input.get("step_number", 1)))
             elif tool_name == "set_timer":
                 return self._set_timer(
                     tool_input.get("seconds", 0),
