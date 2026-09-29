@@ -1,4 +1,4 @@
-# backend/app/main.py
+
 
 # FastAPI is a modern Python web framework. We use it because:
 # 1. It supports WebSockets natively (needed for real-time voice)
@@ -56,6 +56,14 @@ async def voice_endpoint(ws: WebSocket, session_id: str | None = None):
     print(f"Client connected (session: {session_id or 'new'})")
 
     pipeline = VoicePipeline(session_id=session_id)
+
+    async def send_event(payload: dict):
+        try:
+            await ws.send_json(payload)
+        except Exception as e:
+            print(f"Failed to send event: {e}")
+
+    pipeline.set_event_sender(send_event)
 
     if pipeline.message_history:
         history = []

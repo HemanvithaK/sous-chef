@@ -1,6 +1,7 @@
 import base64
 import io
 import os
+import time
 
 import httpx
 from dotenv import load_dotenv
@@ -21,7 +22,8 @@ class VoicePipeline:
       - Running the LangGraph cooking agent (Sonnet, or Haiku for simple turns)
       - Text to speech via OpenAI
       - Restoring and persisting session state so a reconnect resumes the
-        same recipe, step position, and conversation
+        same recipe, step position, conversation, and running timers
+      - Announcing timers out loud when they expire
     """
 
     def __init__(self, session_id: str | None = None):
@@ -43,14 +45,70 @@ class VoicePipeline:
             print(
                 f"Restored session {session_id}: {recipe_name}, "
                 f"step {self.session.current_step}, "
-                f"{len(self.message_history)} messages"
+                f"{len(self.message_history)} messages, "
+                f"{len(self.session.active_timers)} timers"
             )
+
+        # Set by the endpoint once it knows how to reach the browser.
+        self._send_event = None
 
         self.groq_client = httpx.AsyncClient(
             base_url="https://api.groq.com/openai/v1",
             headers={"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"},
             timeout=30.0,
         )
+
+    # -- Wiring to the browser ---------------------------------------
+
+    def set_event_sender(self, sender) -> None:
+        """The endpoint hands us an async function that pushes a dict to
+        the browser. Only once we have it can timers announce themselves,
+        so restored timers are resumed here and not in __init__."""
+        self._send_event = sender
+        self.session.set_alert_callback(self._on_timer_fire)
+        self.session.resume_timers()
+
+    async def _on_timer_fire(self, label: str) -> None:
+        """Called by the session when a timer's sleep finishes."""
+        text = f"Time's up on the {label}."
+        print(f"[timer] fired: {label}")
+
+        audio = await synthesize_speech(text)
+
+        if self._send_event:
+            await self._send_event({
+                "type": "transcript",
+                "role": "assistant",
+                "text": text,
+            })
+            if audio:
+                await self._send_event({"type": "audio", "data": audio})
+            await self._send_event({
+                "type": "timer",
+                "action": "expired",
+                "label": label,
+            })
+
+        self._persist()
+
+    async def _announce_new_timers(self) -> None:
+        """Push a chip to the browser for any timer set during this turn.
+        The session can't reach the socket itself, so the pipeline does it
+        after the agent finishes."""
+        if not self._send_event:
+            return
+        now = time.time()
+        for t in self.session.active_timers:
+            if t.get("announced"):
+                continue
+            t["announced"] = True
+            await self._send_event({
+                "type": "timer",
+                "action": "start",
+                "id": t["id"],
+                "label": t["label"],
+                "seconds": max(0, int(t["expires_at"] - now)),
+            })
 
     # -- Public entry points -----------------------------------------
 
@@ -95,6 +153,7 @@ class VoicePipeline:
             response_text = "Sorry, I'm having trouble right now. Try again?"
 
         audio_b64 = await synthesize_speech(response_text)
+        await self._announce_new_timers()
         self._persist()
 
         return {"text": response_text, "audio": audio_b64}
@@ -158,5 +217,9 @@ class VoicePipeline:
     # -- Teardown ----------------------------------------------------
 
     async def shutdown(self):
+        """Cancel pending timer tasks before persisting. The timers stay in
+        active_timers with their absolute expires_at, so resume_timers can
+        restart them on the next connect."""
+        self.session.cancel_all_timers()
         self._persist()
         await self.groq_client.aclose()

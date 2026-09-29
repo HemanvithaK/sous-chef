@@ -7,6 +7,9 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 
 from app.rag.retriever import search_substitutions_verified
 from app.recipes.loader import load_recipe as parse_recipe
+import asyncio
+import time
+import uuid
 
 SIMPLE_PATTERNS = [
     "next", "done", "ok", "okay", "yes", "yeah", "yep", "sure",
@@ -157,6 +160,24 @@ TOOLS = [
             "required": ["ingredient"],
         },
     },
+        {
+        "name": "cancel_timer",
+        "description": "Cancel a running timer. Omit label to cancel all of them.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "description": "Which timer to cancel. Empty cancels all.",
+                }
+            },
+        },
+    },
+    {
+        "name": "list_timers",
+        "description": "Check what timers are running and how much time is left.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
     {
         "name": "schedule_dishes",
         "description": "Calculate start times so multiple dishes finish together.",
@@ -197,6 +218,30 @@ class CookingSession:
             self.current_step = 0
             self.active_timers = []
 
+        self._alert_callback = None
+        self._timer_tasks = []
+
+    def set_alert_callback(self, callback) -> None:
+        """Called by the pipeline once it knows how to reach the browser."""
+        self._alert_callback = callback
+
+    def resume_timers(self) -> None:
+        """After a reconnect, drop expired timers and restart the live ones."""
+        now = time.time()
+        still_running = []
+        for t in self.active_timers:
+            remaining = t.get("expires_at", 0) - now
+            if remaining > 1:
+                t["seconds"] = int(remaining)
+                still_running.append(t)
+                self._spawn_timer(t)
+        self.active_timers = still_running
+
+    def cancel_all_timers(self) -> None:
+        for task in self._timer_tasks:
+            task.cancel()
+        self._timer_tasks = []
+
     def _suggest_recipe(self, cuisine_or_type: str) -> str:
         return json.dumps({
             "action": "suggest",
@@ -226,6 +271,10 @@ class CookingSession:
                     tool_input.get("seconds", 0),
                     tool_input.get("label", "timer"),
                 )
+            elif tool_name == "cancel_timer":
+                return self._cancel_timer(tool_input.get("label", ""))
+            elif tool_name == "list_timers":
+                return self._list_timers()
             elif tool_name == "search_substitution":
                 return self._search_substitution(tool_input.get("ingredient", ""))
             elif tool_name == "schedule_dishes":
@@ -240,6 +289,8 @@ class CookingSession:
                 "error": f"That didn't work: {str(e)}",
                 "recovery": "Tell the user something went wrong and ask them to try rephrasing.",
             })
+        
+        
 
     async def _load_recipe(self, query: str) -> str:
         recipe = await parse_recipe(query)
@@ -303,21 +354,95 @@ class CookingSession:
         })
 
     def _set_timer(self, seconds: int, label: str) -> str:
-        timer = {"seconds": seconds, "label": label}
+        if seconds <= 0:
+            return json.dumps({"error": "Timer duration must be positive."})
+
+        timer = {
+            "id": uuid.uuid4().hex[:8],
+            "seconds": int(seconds),
+            "label": label,
+            "expires_at": time.time() + seconds,
+        }
         self.active_timers.append(timer)
-        minutes = seconds // 60
-        remaining_secs = seconds % 60
-        if minutes > 0 and remaining_secs > 0:
-            time_str = f"{minutes} minutes and {remaining_secs} seconds"
-        elif minutes > 0:
-            time_str = f"{minutes} minutes"
+        self._spawn_timer(timer)
+
+        mins, secs = divmod(int(seconds), 60)
+        if mins and secs:
+            spoken = f"{mins} minutes and {secs} seconds"
+        elif mins:
+            spoken = f"{mins} minutes"
         else:
-            time_str = f"{seconds} seconds"
+            spoken = f"{secs} seconds"
+
         return json.dumps({
             "timer_set": True,
-            "duration": time_str,
+            "id": timer["id"],
+            "duration": spoken,
             "label": label,
         })
+
+    def _spawn_timer(self, timer: dict) -> None:
+        try:
+            task = asyncio.create_task(self._run_timer(timer))
+            self._timer_tasks.append(task)
+        except RuntimeError:
+            print("No running event loop, timer will not fire")
+
+    async def _run_timer(self, timer: dict) -> None:
+        try:
+            await asyncio.sleep(timer["seconds"])
+        except asyncio.CancelledError:
+            return
+
+        self.active_timers = [
+            t for t in self.active_timers if t["id"] != timer["id"]
+        ]
+
+        if self._alert_callback:
+            try:
+                await self._alert_callback(timer["label"])
+            except Exception as e:
+                print(f"Timer alert failed: {e}")
+
+    def _cancel_timer(self, label: str = "") -> str:
+        if not self.active_timers:
+            return json.dumps({"cancelled": False, "message": "No active timers."})
+
+        if label:
+            match = next(
+                (t for t in self.active_timers
+                 if label.lower() in t["label"].lower()),
+                None,
+            )
+            if not match:
+                return json.dumps({
+                    "cancelled": False,
+                    "message": f"No timer matching '{label}'.",
+                    "active": [t["label"] for t in self.active_timers],
+                })
+            self.active_timers.remove(match)
+            return json.dumps({"cancelled": True, "label": match["label"]})
+
+        self.cancel_all_timers()
+        count = len(self.active_timers)
+        self.active_timers = []
+        return json.dumps({"cancelled": True, "count": count})
+
+    def _list_timers(self) -> str:
+        now = time.time()
+        live = []
+        for t in self.active_timers:
+            remaining = int(t.get("expires_at", 0) - now)
+            if remaining > 0:
+                mins, secs = divmod(remaining, 60)
+                live.append({
+                    "label": t["label"],
+                    "remaining": f"{mins} minutes {secs} seconds" if mins
+                                 else f"{secs} seconds",
+                })
+        if not live:
+            return json.dumps({"timers": [], "message": "No timers running."})
+        return json.dumps({"timers": live})
     def _get_ingredients(self) -> str:
         if not self.current_recipe:
             return json.dumps({"error": "No recipe loaded yet."})

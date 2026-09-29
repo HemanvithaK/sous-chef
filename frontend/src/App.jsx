@@ -1,5 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Mic, Send, ChefHat, Wifi, WifiOff, Ear, RotateCcw } from "lucide-react";
+import {
+  Mic,
+  Send,
+  ChefHat,
+  Wifi,
+  WifiOff,
+  Ear,
+  RotateCcw,
+  Timer as TimerIcon,
+} from "lucide-react";
 import { useVAD } from "./hooks/useVAD";
 import { float32ToWavBase64 } from "./lib/audio";
 
@@ -7,6 +16,7 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
   const [transcript, setTranscript] = useState([]);
+  const [timers, setTimers] = useState([]);
   const [textInput, setTextInput] = useState("");
   const [error, setError] = useState(null);
   const [status, setStatus] = useState("idle"); // idle | listening | hearing | thinking | speaking
@@ -17,7 +27,7 @@ export default function App() {
   const handsFreeRef = useRef(false);
   const sessionIdRef = useRef(null);
 
-  // Audio playback queue so the ack and the real reply never overlap
+  // Playback queue so the ack and the real reply never overlap
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
 
@@ -130,7 +140,7 @@ export default function App() {
       const data = JSON.parse(event.data);
 
       if (data.type === "history") {
-        // Restored conversation from a previous connection
+        // Conversation restored from a previous connection
         setTranscript(
           data.messages.map((m) => ({
             role: m.role,
@@ -145,6 +155,26 @@ export default function App() {
         ]);
       } else if (data.type === "audio") {
         playAudio(data.data);
+      } else if (data.type === "timer") {
+        if (data.action === "start") {
+          setTimers((prev) => {
+            if (prev.some((t) => t.id === data.id)) return prev;
+            return [
+              ...prev,
+              {
+                id: data.id,
+                label: data.label,
+                seconds: data.seconds,
+                startedAt: Date.now(),
+              },
+            ];
+          });
+        } else if (data.action === "expired") {
+          // Backend announced it out loud; drop the chip shortly after
+          setTimeout(() => {
+            setTimers((prev) => prev.filter((t) => t.label !== data.label));
+          }, 4000);
+        }
       }
     };
 
@@ -181,6 +211,7 @@ export default function App() {
     localStorage.setItem("souschef_session_id", id);
     sessionIdRef.current = id;
     setTranscript([]);
+    setTimers([]);
     audioQueueRef.current = [];
     if (wsRef.current) {
       wsRef.current.close();
@@ -270,6 +301,14 @@ export default function App() {
           <button onClick={() => setError(null)} style={styles.errorClose}>
             X
           </button>
+        </div>
+      )}
+
+      {timers.length > 0 && (
+        <div style={styles.timerRow}>
+          {timers.map((t) => (
+            <TimerChip key={t.id} timer={t} />
+          ))}
         </div>
       )}
 
@@ -383,7 +422,66 @@ export default function App() {
           70% { box-shadow: 0 0 0 18px rgba(74, 222, 128, 0); }
           100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
         }
+        @keyframes flash {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.45; }
+        }
       `}</style>
+    </div>
+  );
+}
+
+// -- Countdown chip --------------------------------------------------
+// Ticks locally for display only. The authoritative alert comes from the
+// backend, which is what actually speaks when the time is up.
+
+function TimerChip({ timer }) {
+  const [remaining, setRemaining] = useState(timer.seconds);
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - timer.startedAt) / 1000);
+      setRemaining(Math.max(0, timer.seconds - elapsed));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [timer]);
+
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  const done = remaining === 0;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "6px 12px",
+        borderRadius: "999px",
+        fontSize: "13px",
+        flexShrink: 0,
+        background: done ? "rgba(74,222,128,0.15)" : "#292524",
+        border: `1px solid ${done ? "#16a34a" : "#44403c"}`,
+        color: done ? "#4ade80" : "#d6d3d1",
+        animation: done ? "flash 1s infinite" : "none",
+      }}
+    >
+      <TimerIcon size={14} />
+      <span style={{ fontFamily: "monospace", fontWeight: 600 }}>
+        {mins}:{secs.toString().padStart(2, "0")}
+      </span>
+      <span
+        style={{
+          color: done ? "#4ade80" : "#78716c",
+          fontSize: "12px",
+          maxWidth: "110px",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {timer.label}
+      </span>
     </div>
   );
 }
@@ -434,11 +532,18 @@ const styles = {
     cursor: "pointer",
     fontSize: "16px",
   },
+  timerRow: {
+    display: "flex",
+    gap: "8px",
+    marginBottom: "12px",
+    overflowX: "auto",
+    paddingBottom: "2px",
+  },
   transcript: {
     flex: 1,
     overflowY: "auto",
     marginBottom: "16px",
-    minHeight: "280px",
+    minHeight: "260px",
   },
   emptyState: {
     display: "flex",
@@ -446,7 +551,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     height: "100%",
-    minHeight: "280px",
+    minHeight: "260px",
     gap: "12px",
   },
   emptyTitle: { fontSize: "18px", fontWeight: "600", color: "#a8a29e" },
