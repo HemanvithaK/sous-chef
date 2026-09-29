@@ -187,10 +187,15 @@ class CookingState(TypedDict):
 
 
 class CookingSession:
-    def __init__(self):
-        self.current_recipe = None
-        self.current_step = 0
-        self.active_timers = []
+    def __init__(self, restored: dict | None = None):
+        if restored:
+            self.current_recipe = restored.get("current_recipe")
+            self.current_step = restored.get("current_step", 0)
+            self.active_timers = restored.get("active_timers", [])
+        else:
+            self.current_recipe = None
+            self.current_step = 0
+            self.active_timers = []
 
     def _suggest_recipe(self, cuisine_or_type: str) -> str:
         return json.dumps({

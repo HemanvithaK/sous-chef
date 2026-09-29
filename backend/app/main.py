@@ -51,16 +51,20 @@ async def health():
 # - WebSocket stays open — both sides can send data anytime
 # - We need this because voice is a continuous stream, not a single request
 @app.websocket("/ws/voice")
-async def voice_endpoint(ws: WebSocket):
-
-    # Step 1: Accept the incoming WebSocket connection from the browser
+async def voice_endpoint(ws: WebSocket, session_id: str | None = None):
     await ws.accept()
-    print("Client connected")
+    print(f"Client connected (session: {session_id or 'new'})")
 
-    # Step 2: Create a new voice pipeline for this session.
-    # Each connected user gets their own pipeline instance
-    # so conversations don't mix.
-    pipeline = VoicePipeline()
+    pipeline = VoicePipeline(session_id=session_id)
+
+    if pipeline.message_history:
+        history = []
+        for msg in pipeline.message_history:
+            role = "user" if msg.type == "human" else "assistant"
+            text = msg.content if isinstance(msg.content, str) else ""
+            if text.strip():
+                history.append({"role": role, "text": text})
+        await ws.send_json({"type": "history", "messages": history})
 
     try:
         # Step 3: Enter an infinite loop to continuously receive messages.

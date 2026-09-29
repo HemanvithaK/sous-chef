@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Mic, Send, ChefHat, Wifi, WifiOff, Ear } from "lucide-react";
+import { Mic, Send, ChefHat, Wifi, WifiOff, Ear, RotateCcw } from "lucide-react";
 import { useVAD } from "./hooks/useVAD";
 import { float32ToWavBase64 } from "./lib/audio";
 
@@ -15,8 +15,21 @@ export default function App() {
   const transcriptEndRef = useRef(null);
   const vadRef = useRef(null);
   const handsFreeRef = useRef(false);
+  const sessionIdRef = useRef(null);
+
+  // Audio playback queue so the ack and the real reply never overlap
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
+
+  // -- Session id, persisted across refreshes and restarts ----------
+  useEffect(() => {
+    let id = localStorage.getItem("souschef_session_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("souschef_session_id", id);
+    }
+    sessionIdRef.current = id;
+  }, []);
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -26,9 +39,9 @@ export default function App() {
     handsFreeRef.current = handsFree;
   }, [handsFree]);
 
-  // Play TTS audio, pausing the mic while it plays so the mic
-  // does not hear Sous Chef's own voice and transcribe it.
-    const playNext = useCallback(() => {
+  // -- Audio playback -----------------------------------------------
+
+  const playNext = useCallback(() => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
       if (vadRef.current && handsFreeRef.current) {
@@ -69,14 +82,20 @@ export default function App() {
     }
   }, []);
 
-  const playAudio = useCallback((base64Mp3) => {
-    audioQueueRef.current.push(base64Mp3);
-    if (vadRef.current) vadRef.current.pause();
-    setStatus("speaking");
-    if (!isPlayingRef.current) {
-      playNext();
-    }
-  }, [playNext]);
+  const playAudio = useCallback(
+    (base64Mp3) => {
+      audioQueueRef.current.push(base64Mp3);
+      // Pause the mic so it does not hear Sous Chef's own voice
+      if (vadRef.current) vadRef.current.pause();
+      setStatus("speaking");
+      if (!isPlayingRef.current) {
+        playNext();
+      }
+    },
+    [playNext]
+  );
+
+  // -- Sending ------------------------------------------------------
 
   const sendUtterance = useCallback((float32Audio) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -94,8 +113,13 @@ export default function App() {
     vadRef.current = vad;
   }, [vad]);
 
+  // -- WebSocket ----------------------------------------------------
+
   const connect = useCallback(() => {
-    const ws = new WebSocket(`ws://${window.location.host}/ws/voice`);
+    const sid = sessionIdRef.current || "";
+    const ws = new WebSocket(
+      `ws://${window.location.host}/ws/voice?session_id=${sid}`
+    );
 
     ws.onopen = () => {
       setIsConnected(true);
@@ -104,7 +128,17 @@ export default function App() {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      if (data.type === "transcript") {
+
+      if (data.type === "history") {
+        // Restored conversation from a previous connection
+        setTranscript(
+          data.messages.map((m) => ({
+            role: m.role,
+            text: m.text,
+            ts: Date.now(),
+          }))
+        );
+      } else if (data.type === "transcript") {
         setTranscript((prev) => [
           ...prev,
           { role: data.role, text: data.text, ts: Date.now() },
@@ -140,6 +174,26 @@ export default function App() {
     setStatus("idle");
   }, []);
 
+  // -- Start a brand new session (clears saved state) ----------------
+
+  const newSession = useCallback(() => {
+    const id = crypto.randomUUID();
+    localStorage.setItem("souschef_session_id", id);
+    sessionIdRef.current = id;
+    setTranscript([]);
+    audioQueueRef.current = [];
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (vadRef.current) vadRef.current.stop();
+    setHandsFree(false);
+    setIsConnected(false);
+    setStatus("idle");
+  }, []);
+
+  // -- Hands-free toggle --------------------------------------------
+
   const toggleHandsFree = useCallback(async () => {
     if (handsFree) {
       vad.stop();
@@ -156,6 +210,8 @@ export default function App() {
       }
     }
   }, [handsFree, vad]);
+
+  // -- Text fallback -------------------------------------------------
 
   const sendText = useCallback(() => {
     if (!textInput.trim() || !wsRef.current) return;
@@ -183,6 +239,8 @@ export default function App() {
     speaking: "Speaking...",
   }[status];
 
+  // -- Render --------------------------------------------------------
+
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -191,6 +249,13 @@ export default function App() {
           <h1 style={styles.title}>Sous Chef</h1>
         </div>
         <div style={styles.headerRight}>
+          <button
+            onClick={newSession}
+            style={styles.newSessionButton}
+            title="Start a new session"
+          >
+            <RotateCcw size={16} color="#a8a29e" />
+          </button>
           {isConnected ? (
             <Wifi size={18} color="#4ade80" />
           ) : (
@@ -214,7 +279,7 @@ export default function App() {
             <ChefHat size={64} color="#44403c" />
             <p style={styles.emptyTitle}>Ready to cook?</p>
             <p style={styles.emptySubtitle}>
-              Connect, tap Start Listening, and just talk.
+              Connect, tap the mic, and just talk.
             </p>
           </div>
         )}
@@ -339,8 +404,17 @@ const styles = {
     marginBottom: "16px",
   },
   headerLeft: { display: "flex", alignItems: "center", gap: "10px" },
-  headerRight: { display: "flex", alignItems: "center", gap: "8px" },
+  headerRight: { display: "flex", alignItems: "center", gap: "10px" },
   title: { fontSize: "24px", fontWeight: "bold", letterSpacing: "-0.5px" },
+  newSessionButton: {
+    background: "none",
+    border: "1px solid #44403c",
+    borderRadius: "8px",
+    padding: "6px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+  },
   error: {
     background: "rgba(220, 38, 38, 0.15)",
     border: "1px solid rgba(220, 38, 38, 0.3)",
