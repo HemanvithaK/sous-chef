@@ -185,6 +185,7 @@ class VoicePipeline:
 
         save_session(
             self.session_id,
+            constraints=self.session.constraints,
             current_recipe=self.session.current_recipe,
             current_step=self.session.current_step,
             active_timers=self.session.active_timers,

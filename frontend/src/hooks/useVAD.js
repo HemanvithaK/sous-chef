@@ -12,11 +12,17 @@ export function useVAD({ onSpeechEnd, onSpeechStart }) {
 
     const vad = await MicVAD.new({
         baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/",
-        onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/", 
+        onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/",
+        additionalAudioConstraints: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      }, 
       onSpeechStart: () => {
         if (pausedRef.current) return;
         setIsSpeaking(true);
         onSpeechStart?.();
+        
       },
 
       onSpeechEnd: (audio) => {

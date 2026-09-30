@@ -38,6 +38,10 @@ sourdough starter; a recipe without one is not a match.
 does NOT make it a different dish — it is a variation. But replacing chicken \
 with tofu in butter chicken DOES change the dish. The test: if you removed the \
 extras, would the core recipe still be what the user asked for? If yes, match.
+- It violates a stated hard dietary constraint. A recipe with butter fails a \
+vegan constraint, one with soy sauce fails a gluten-free constraint, one with \
+chicken stock fails a vegetarian constraint. The dish name being correct does \
+not override this. Check the ingredient list, not the title.
 
 When uncertain, do not match. A wrong recipe is worse than no recipe — the user \
 will follow the wrong steps and end up with the wrong dish.
@@ -124,13 +128,28 @@ class RecipeVerifier:
             self._client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         return self._client
 
-    async def verify(self, query: str, recipe: ParsedRecipe) -> bool:
-        ingredients_preview = ", ".join(recipe.ingredients[:10])
-        if len(recipe.ingredients) > 10:
-            ingredients_preview += f", ... ({len(recipe.ingredients) - 10} more)"
+    async def verify(
+        self,
+        query: str,
+        recipe: ParsedRecipe,
+        constraints: list[str] | None = None,
+    ) -> bool:
+        ingredients_preview = ", ".join(recipe.ingredients[:12])
+        if len(recipe.ingredients) > 12:
+            ingredients_preview += f", ... ({len(recipe.ingredients) - 12} more)"
+
+        constraint_block = ""
+        if constraints:
+            constraint_block = (
+                f"\nHARD DIETARY CONSTRAINTS: {', '.join(constraints)}\n"
+                "The recipe must satisfy these as written. If any ingredient "
+                "violates a constraint, it is NOT a match — even if the dish "
+                "name is exactly right. Do not assume the user will substitute.\n"
+            )
 
         user_message = (
-            f"User asked for: {query}\n\n"
+            f"User asked for: {query}\n"
+            f"{constraint_block}\n"
             f"Recipe found:\n"
             f"  Name: {recipe.name}\n"
             f"  Ingredients: {ingredients_preview}\n\n"
@@ -145,19 +164,20 @@ class RecipeVerifier:
                 system=VERIFIER_PROMPT,
                 messages=[{"role": "user", "content": user_message}],
             )
-            raw = response.content[0].text
-            parsed = extract_json_object(raw)
-
+            parsed = extract_json_object(response.content[0].text)
             is_match = bool(parsed.get("match", False))
             reason = parsed.get("reason", "no reason given")
-
             print(f"    Verifier: match={is_match} ({reason})")
             return is_match
-
         except Exception as e:
             print(f"    Recipe verifier error (failing closed): {e}")
             return False
-
+    async def verify_recipe_match(
+        query: str,
+        recipe: ParsedRecipe,
+        constraints: list[str] | None = None,
+    ) -> bool:
+        return await _verifier.verify(query, recipe, constraints=constraints)
 
 _verifier = RecipeVerifier()
 

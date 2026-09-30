@@ -43,10 +43,19 @@ class RecipeSearcher:
             self._client = AsyncTavilyClient(api_key=api_key)
         return self._client
 
-    async def search(self, recipe_query: str, max_results: int = 5) -> list[str]:
+    async def search(
+        self,
+        recipe_query: str,
+        max_results: int = 5,
+        constraints: list[str] | None = None,
+    ) -> list[str]:
         client = self._ensure_client()
 
-        search_query = f"{recipe_query} recipe ingredients instructions"
+        parts = [recipe_query]
+        if constraints:
+            parts.extend(constraints)
+        parts.append("recipe ingredients instructions")
+        search_query = " ".join(parts)
 
         try:
             response = await client.search(
@@ -57,11 +66,19 @@ class RecipeSearcher:
             )
             results = response.get("results", [])
             return [r["url"] for r in results if "url" in r]
-
         except Exception as e:
             print(f"Tavily search error: {e}")
             return []
 
+    async def search_recipe(
+        recipe_query: str,
+        max_results: int = 5,
+        constraints: list[str] | None = None,
+    ) -> list[str]:
+        return await _searcher.search(
+            recipe_query, max_results=max_results, constraints=constraints
+        )
+  
 
 _searcher = RecipeSearcher()
 

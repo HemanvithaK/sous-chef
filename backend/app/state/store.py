@@ -27,6 +27,7 @@ class SessionStore:
                 "current_recipe": raw.get("current_recipe"),
                 "current_step": raw.get("current_step", 0),
                 "active_timers": raw.get("active_timers", []),
+                "constraints": raw.get("constraints", []),
                 "messages": messages_from_dict(raw.get("messages", [])),
             }
         except Exception as e:
@@ -40,12 +41,14 @@ class SessionStore:
         current_step: int,
         active_timers: list,
         messages: list,
+        constraints: list | None = None,
     ) -> None:
         try:
             payload = {
                 "current_recipe": current_recipe,
                 "current_step": current_step,
                 "active_timers": active_timers,
+                "constraints": constraints or [],
                 "messages": messages_to_dict(messages),
             }
             with open(self._path(session_id), "w", encoding="utf-8") as f:

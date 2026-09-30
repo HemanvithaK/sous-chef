@@ -58,6 +58,17 @@ What you never do:
 - Never give long explanations unless asked.
 - Never repeat yourself.
 
+What you do:
+- Save dietary constraints the instant they come up. If the user says they're \
+vegan, gluten free, allergic to nuts, or anything similar, call set_constraint \
+immediately, even if they mention it in passing while discussing something else. \
+Acknowledge in a few words and carry on.
+- Constraints persist for the whole session and are applied to every recipe \
+search automatically. Do not re-ask.
+- If a recipe can't be found under the active constraints, say so plainly and \
+offer to adapt a standard recipe instead. Never quietly serve something that \
+violates a saved constraint.
+
 Speaking style (you are heard, not read):
 - No bullet points, markdown, symbols, or abbreviations.
 - Use contractions.
@@ -127,6 +138,50 @@ TOOLS = [
             "type": "object",
             "properties": {},
         },
+    },
+    {
+        "name": "set_constraint",
+        "description": (
+            "Save a dietary restriction or preference that should apply to every "
+            "recipe from now on. Call this the moment the user mentions one — "
+            "'I'm vegan', 'no gluten', 'I don't eat pork', 'dairy free', "
+            "'nut allergy'. Call it even mid-conversation about something else."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "constraint": {
+                    "type": "string",
+                    "description": (
+                        "Short phrase in the user's own terms: 'vegan', "
+                        "'gluten free', 'no pork', 'nut allergy'."
+                    ),
+                }
+            },
+            "required": ["constraint"],
+        },
+    },
+    {
+        "name": "clear_constraint",
+        "description": (
+            "Remove a saved dietary constraint. Use when the user says something "
+            "like 'actually I can eat dairy today' or 'forget the vegan thing'. "
+            "Omit the constraint to clear all of them."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "constraint": {
+                    "type": "string",
+                    "description": "Which one to remove. Empty removes all.",
+                }
+            },
+        },
+    },
+    {
+        "name": "list_constraints",
+        "description": "Check what dietary constraints are currently saved.",
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "next_step",
@@ -239,14 +294,55 @@ class CookingSession:
             self.current_recipe = restored.get("current_recipe")
             self.current_step = restored.get("current_step", 0)
             self.active_timers = restored.get("active_timers", [])
+            self.constraints = restored.get("constraints", [])
         else:
             self.current_recipe = None
             self.current_step = 0
             self.active_timers = []
+            self.constraints = []
 
         self._alert_callback = None
         self._timer_tasks = []
 
+    
+    def _set_constraint(self, constraint: str) -> str:
+        c = constraint.strip().lower()
+        if not c:
+            return json.dumps({"error": "No constraint given."})
+        if c in self.constraints:
+            return json.dumps({
+                "already_set": True,
+                "constraints": self.constraints,
+            })
+        self.constraints.append(c)
+        return json.dumps({
+            "saved": True,
+            "constraints": self.constraints,
+            "note": (
+                "This now applies to every recipe search for the rest of the "
+                "session. Acknowledge it briefly and move on."
+            ),
+        })
+
+    def _clear_constraint(self, constraint: str = "") -> str:
+        if not self.constraints:
+            return json.dumps({"message": "No constraints were set."})
+        if constraint:
+            c = constraint.strip().lower()
+            before = len(self.constraints)
+            self.constraints = [
+                x for x in self.constraints if c not in x and x not in c
+            ]
+            removed = before - len(self.constraints)
+            return json.dumps({
+                "removed": removed,
+                "constraints": self.constraints,
+            })
+        self.constraints = []
+        return json.dumps({"cleared_all": True, "constraints": []})
+
+    def _list_constraints(self) -> str:
+        return json.dumps({"constraints": self.constraints})
     def set_alert_callback(self, callback) -> None:
         """Called by the pipeline once it knows how to reach the browser."""
         self._alert_callback = callback
@@ -327,6 +423,12 @@ class CookingSession:
                 return self._next_step()
             elif tool_name == "previous_step":
                 return self._previous_step()
+            elif tool_name == "set_constraint":
+                return self._set_constraint(tool_input.get("constraint", ""))
+            elif tool_name == "clear_constraint":
+                return self._clear_constraint(tool_input.get("constraint", ""))
+            elif tool_name == "list_constraints":
+                return self._list_constraints()
             elif tool_name == "repeat_step":
                 return self._repeat_step()
             elif tool_name == "go_to_step":
@@ -358,17 +460,21 @@ class CookingSession:
         
 
     async def _load_recipe(self, query: str) -> str:
-        recipe = await parse_recipe(query)
+        recipe = await parse_recipe(query, constraints=self.constraints)
 
         if not recipe:
-            return json.dumps({
-                "found": False,
-                "message": (
-                    "Couldn't parse a recipe from that. If it was a URL, the site "
-                    "might not be supported or the page didn't load. Ask the user "
-                    "to paste the recipe text directly, or try a different URL."
-                ),
-            })
+            msg = (
+                "Couldn't find a recipe for that. If it was a URL, the site may "
+                "be blocked or the page is gone. Suggest a different dish, or "
+                "ask the user to paste the recipe text."
+            )
+            if self.constraints:
+                msg += (
+                    f" Note the active constraints ({', '.join(self.constraints)}) "
+                    "narrowed the search — say so, and offer to adapt a standard "
+                    "recipe instead."
+                )
+            return json.dumps({"found": False, "message": msg})
 
         self.current_recipe = {
             "name": recipe.name,
@@ -389,6 +495,7 @@ class CookingSession:
             "ingredients_count": len(recipe.ingredients),
             "first_step": recipe.steps[0] if recipe.steps else None,
             "parser_used": recipe.parser_used,
+            "active_constraints": self.constraints,
         })
 
     def _get_current_step(self) -> str:
