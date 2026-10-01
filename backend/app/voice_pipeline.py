@@ -5,7 +5,7 @@ import time
 
 import httpx
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agents.cooking_agent import CookingSession, build_agent, is_simple_turn
 from app.voice.tts import synthesize_speech
@@ -21,8 +21,8 @@ class VoicePipeline:
       - Speech to text via Groq Whisper
       - Running the LangGraph cooking agent (Sonnet, or Haiku for simple turns)
       - Text to speech via OpenAI
-      - Restoring and persisting session state so a reconnect resumes the
-        same recipe, step position, conversation, and running timers
+      - Restoring and persisting session state so a reconnect resumes the same
+        recipe, step position, conversation, timers, and dietary constraints
       - Announcing timers out loud when they expire
     """
 
@@ -46,7 +46,8 @@ class VoicePipeline:
                 f"Restored session {session_id}: {recipe_name}, "
                 f"step {self.session.current_step}, "
                 f"{len(self.message_history)} messages, "
-                f"{len(self.session.active_timers)} timers"
+                f"{len(self.session.active_timers)} timers, "
+                f"constraints={self.session.constraints}"
             )
 
         # Set by the endpoint once it knows how to reach the browser.
@@ -61,9 +62,9 @@ class VoicePipeline:
     # -- Wiring to the browser ---------------------------------------
 
     def set_event_sender(self, sender) -> None:
-        """The endpoint hands us an async function that pushes a dict to
-        the browser. Only once we have it can timers announce themselves,
-        so restored timers are resumed here and not in __init__."""
+        """The endpoint hands us an async function that pushes a dict to the
+        browser. Only once we have it can timers announce themselves, so
+        restored timers are resumed here rather than in __init__."""
         self._send_event = sender
         self.session.set_alert_callback(self._on_timer_fire)
         self.session.resume_timers()
@@ -92,9 +93,9 @@ class VoicePipeline:
         self._persist()
 
     async def _announce_new_timers(self) -> None:
-        """Push a chip to the browser for any timer set during this turn.
-        The session can't reach the socket itself, so the pipeline does it
-        after the agent finishes."""
+        """Push a chip to the browser for any timer set during this turn. The
+        session can't reach the socket itself, so the pipeline does it after
+        the agent finishes."""
         if not self._send_event:
             return
         now = time.time()
@@ -145,8 +146,7 @@ class VoicePipeline:
 
         try:
             result = await agent.ainvoke({"messages": self.message_history})
-            ai_message = result["messages"][-1]
-            response_text = self._extract_text(ai_message.content)
+            response_text = self._last_ai_text(result["messages"])
             self.message_history = result["messages"]
         except Exception as e:
             print(f"Agent error: {e}")
@@ -157,6 +157,21 @@ class VoicePipeline:
         self._persist()
 
         return {"text": response_text, "audio": audio_b64}
+
+    def _last_ai_text(self, messages: list) -> str:
+        """Find the last real assistant reply, skipping tool results.
+
+        After a tool call the final message can be a ToolMessage holding raw
+        JSON. Showing that to the user leaks internals, and TTS reads it out
+        loud. Walk backwards to the newest AIMessage that has actual prose —
+        an AIMessage carrying only a tool call has no text worth speaking.
+        """
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage):
+                text = self._extract_text(msg.content)
+                if text.strip():
+                    return text
+        return "Sorry, I didn't catch that. Could you say it again?"
 
     def _extract_text(self, content) -> str:
         """Claude returns a plain string for simple replies, or a list of
@@ -185,10 +200,10 @@ class VoicePipeline:
 
         save_session(
             self.session_id,
-            constraints=self.session.constraints,
             current_recipe=self.session.current_recipe,
             current_step=self.session.current_step,
             active_timers=self.session.active_timers,
+            constraints=self.session.constraints,
             messages=self.message_history,
         )
 
