@@ -276,7 +276,7 @@ export default function App() {
     <div style={styles.container}>
       <header style={styles.header}>
         <div style={styles.headerLeft}>
-          <ChefHat size={32} color="#f97316" />
+          <ChefHat size={32} color="#16a34a" />
           <h1 style={styles.title}>Sous Chef</h1>
         </div>
         <div style={styles.headerRight}>
